@@ -28,7 +28,7 @@ export function ContactsPage() {
 
   const pageSize = 30;
 
-  const { contacts, total, totalPages, loading, error, refresh, deleteContact } = useContacts({
+  const { contacts, total, totalPages, loading, error, refresh, deleteContact, bulkDeleteContacts } = useContacts({
     search: search || undefined,
     tag: selectedCategory || undefined,
     page: currentPage,
@@ -127,6 +127,14 @@ export function ContactsPage() {
     refresh();
   };
 
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Tem certeza que deseja excluir ${selectedContactIds.length} contato(s)? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+    await bulkDeleteContacts(selectedContactIds);
+    setSelectedContactIds([]);
+  };
+
   if (error) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -163,6 +171,13 @@ export function ContactsPage() {
                   aria-label="Editar contatos selecionados"
                 >
                   Editar Selecionados ({selectedContactIds.length})
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 text-sm font-medium transition-colors"
+                  aria-label="Excluir contatos selecionados"
+                >
+                  Excluir Selecionados ({selectedContactIds.length})
                 </button>
                 <button
                   onClick={() => setSelectedContactIds([])}
