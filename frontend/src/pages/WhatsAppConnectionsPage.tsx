@@ -72,6 +72,14 @@ export function WhatsAppConnectionsPage() {
   const [providerDropdownOpen, setProviderDropdownOpen] = useState(false);
   const [allowedProviders, setAllowedProviders] = useState<string[]>(['WAHA', 'EVOLUTION', 'QUEPASA']);
 
+  // States for Import Evolution modal
+  const [importEvolutionModalOpen, setImportEvolutionModalOpen] = useState(false);
+  const [importEvolutionUrl, setImportEvolutionUrl] = useState('');
+  const [importEvolutionInstance, setImportEvolutionInstance] = useState('');
+  const [importEvolutionApiKey, setImportEvolutionApiKey] = useState('');
+  const [importEvolutionDisplayName, setImportEvolutionDisplayName] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
   // Preload das imagens dos provedores para carregamento instantâneo
   useEffect(() => {
     const images = [
@@ -239,6 +247,45 @@ export function WhatsAppConnectionsPage() {
         toast.error('Erro ao carregar sessões WhatsApp');
         setLoading(false);
       }
+    }
+  };
+
+  const importEvolutionSession = async () => {
+    if (!importEvolutionUrl.trim() || !importEvolutionInstance.trim() || !importEvolutionApiKey.trim()) {
+      toast.error('Preencha todos os campos obrigatórios');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const response = await authenticatedFetch('/api/waha/sessions/import-evolution', {
+        method: 'POST',
+        body: JSON.stringify({
+          url: importEvolutionUrl.trim(),
+          instanceName: importEvolutionInstance.trim(),
+          apiKey: importEvolutionApiKey.trim(),
+          displayName: importEvolutionDisplayName.trim() || importEvolutionInstance.trim(),
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      toast.success(`Sessão "${importEvolutionInstance}" importada com sucesso!`);
+      setImportEvolutionModalOpen(false);
+      setImportEvolutionUrl('');
+      setImportEvolutionInstance('');
+      setImportEvolutionApiKey('');
+      setImportEvolutionDisplayName('');
+      await loadSessions();
+    } catch (error) {
+      console.error('Erro ao importar sessão:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao importar sessão');
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -527,6 +574,12 @@ export function WhatsAppConnectionsPage() {
         actions={
           <div className="flex gap-3">
             <button
+              onClick={() => setImportEvolutionModalOpen(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium transition-colors"
+            >
+              Importar do Evolution
+            </button>
+            <button
               onClick={() => setCreateSessionModalOpen(true)}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 text-sm font-medium transition-colors"
             >
@@ -630,6 +683,121 @@ export function WhatsAppConnectionsPage() {
           </div>
         )}
       </div>
+
+      {/* Modal Importar Sessão Evolution */}
+      {importEvolutionModalOpen && (
+        <Portal>
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center backdrop-blur-sm" style={{ zIndex: 9999 }}>
+            <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md border border-gray-100 m-4" role="dialog" aria-labelledby="import-evolution-title">
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl mx-auto mb-4 flex items-center justify-center">
+                  <img src="/iconeevolutionapi.png" alt="Evolution API" className="w-10 h-10 object-contain" />
+                </div>
+                <h2 id="import-evolution-title" className="text-2xl font-bold text-gray-900">
+                  Importar do Evolution API
+                </h2>
+                <p className="text-gray-500 mt-2">
+                  Importe uma instância já existente na sua Evolution API
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    URL da Evolution API *
+                  </label>
+                  <input
+                    type="url"
+                    value={importEvolutionUrl}
+                    onChange={(e) => setImportEvolutionUrl(e.target.value)}
+                    placeholder="https://sua-evolution.com"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    disabled={isImporting}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Nome da Instância *
+                  </label>
+                  <input
+                    type="text"
+                    value={importEvolutionInstance}
+                    onChange={(e) => setImportEvolutionInstance(e.target.value)}
+                    placeholder="Ex: minha-instancia"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    disabled={isImporting}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    API Key *
+                  </label>
+                  <input
+                    type="password"
+                    value={importEvolutionApiKey}
+                    onChange={(e) => setImportEvolutionApiKey(e.target.value)}
+                    placeholder="Sua API Key da Evolution"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    disabled={isImporting}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Nome de Exibição (opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={importEvolutionDisplayName}
+                    onChange={(e) => setImportEvolutionDisplayName(e.target.value)}
+                    placeholder="Ex: Vendas Principal"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                    disabled={isImporting}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Se não informado, usa o nome da instância</p>
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setImportEvolutionModalOpen(false);
+                      setImportEvolutionUrl('');
+                      setImportEvolutionInstance('');
+                      setImportEvolutionApiKey('');
+                      setImportEvolutionDisplayName('');
+                    }}
+                    className="flex-1 bg-gray-100 text-gray-700 py-3 px-6 rounded-xl hover:bg-gray-200 font-medium transition-all duration-200 border border-gray-200"
+                    disabled={isImporting}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={importEvolutionSession}
+                    disabled={isImporting || !importEvolutionUrl.trim() || !importEvolutionInstance.trim() || !importEvolutionApiKey.trim()}
+                    className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-xl hover:bg-blue-700 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isImporting ? (
+                      <>
+                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Importando...
+                      </>
+                    ) : (
+                      'Importar Sessão'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
       {/* Modal Criar Sessão */}
       {createSessionModalOpen && (
