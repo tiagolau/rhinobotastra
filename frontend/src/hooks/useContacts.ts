@@ -45,6 +45,29 @@ export function useContacts(params: UseContactsParams = {}) {
     }
   };
 
+  const bulkDeleteContacts = async (ids: string[]) => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('/api/contatos/bulk/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ contactIds: ids }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Erro desconhecido' }));
+        throw new Error(err.error || 'Erro ao excluir contatos');
+      }
+      toast.success(`${ids.length} contato(s) excluído(s) com sucesso`);
+      fetchContacts();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao excluir contatos';
+      toast.error(errorMessage);
+    }
+  };
+
   return {
     contacts: data?.contacts || [],
     total: data?.total || 0,
@@ -55,5 +78,6 @@ export function useContacts(params: UseContactsParams = {}) {
     error,
     refresh: fetchContacts,
     deleteContact,
+    bulkDeleteContacts,
   };
 }
