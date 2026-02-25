@@ -24,6 +24,34 @@ function generateWebhookSecret(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Função para fazer requisições Evolution com credenciais customizadas (sessões importadas)
+const evolutionRequestWithCredentials = async (baseUrl: string, apiKey: string, endpoint: string, options: any = {}) => {
+  const url = `${baseUrl}${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': apiKey,
+      ...(options.headers || {}),
+    },
+  });
+  return response;
+};
+
+// Busca credenciais Evolution para uma sessão (customizadas ou globais)
+const getEvolutionCredentialsForSession = async (sessionName: string): Promise<{ url: string; apiKey: string } | null> => {
+  try {
+    const session = await prisma.whatsAppSession.findUnique({ where: { name: sessionName } });
+    if (session?.config) {
+      const config = JSON.parse(session.config);
+      if (config.evolutionUrl && config.evolutionApiKey) {
+        return { url: config.evolutionUrl, apiKey: config.evolutionApiKey };
+      }
+    }
+  } catch (e) {}
+  return null;
+};
+
 const wahaRequest = async (endpoint: string, options: any = {}) => {
   // Buscar configurações dinâmicas do banco usando o método específico
   const config = await settingsService.getWahaConfig();
@@ -388,6 +416,67 @@ router.get('/sessions/:sessionName', authMiddleware, async (req: AuthenticatedRe
   } catch (error) {
     console.error('Erro ao obter sessão:', error);
     res.status(500).json({ error: 'Erro ao obter informações da sessão' });
+  }
+});
+
+// Importar sessão Evolution API existente
+router.post('/sessions/import-evolution', authMiddleware, checkConnectionQuota, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { url, instanceName, apiKey, displayName, interactiveCampaignEnabled } = req.body;
+
+    if (!url || !instanceName || !apiKey) {
+      return res.status(400).json({ error: 'URL, instanceName e apiKey são obrigatórios' });
+    }
+
+    const normalizedUrl = url.replace(/\/$/, '');
+
+    // Verificar se a instância existe na Evolution API informada
+    const verifyResponse = await fetch(`${normalizedUrl}/instance/connectionState/${instanceName}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': apiKey,
+      },
+    });
+
+    if (!verifyResponse.ok) {
+      const errText = await verifyResponse.text();
+      return res.status(400).json({ error: `Instância não encontrada ou credenciais inválidas. Verifique a URL, instância e API Key. Detalhe: ${errText}` });
+    }
+
+    const instanceData = await verifyResponse.json();
+    const evolutionState = instanceData?.instance?.state || instanceData?.state || 'close';
+
+    const statusMap: { [key: string]: string } = {
+      'open': 'WORKING',
+      'connecting': 'SCAN_QR_CODE',
+      'close': 'STOPPED',
+      'closed': 'STOPPED',
+    };
+    const mappedStatus = (statusMap[evolutionState?.toLowerCase()] || 'STOPPED') as 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED';
+
+    const tenantId = req.tenantId;
+    const webhookSecret = generateWebhookSecret();
+
+    await WhatsAppSessionService.createOrUpdateSession({
+      name: instanceName,
+      displayName: displayName || instanceName,
+      status: mappedStatus,
+      provider: 'EVOLUTION',
+      tenantId,
+      interactiveCampaignEnabled: interactiveCampaignEnabled || false,
+      webhookSecret,
+      config: {
+        evolutionUrl: normalizedUrl,
+        evolutionApiKey: apiKey,
+        imported: true,
+      },
+    });
+
+    console.log(`✅ Sessão Evolution importada: ${instanceName} (${normalizedUrl})`);
+    res.json({ success: true, message: `Sessão ${instanceName} importada com sucesso`, status: mappedStatus });
+  } catch (error) {
+    console.error('Erro ao importar sessão Evolution:', error);
+    res.status(500).json({ error: error instanceof Error ? error.message : 'Erro ao importar sessão' });
   }
 });
 
@@ -1253,4 +1342,10 @@ router.patch('/sessions/:sessionName/assign-tenant', authMiddleware, async (req:
   }
 });
 
-export default router;
+export default router;"
+     9→  }
+    10→]
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
