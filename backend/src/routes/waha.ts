@@ -7,9 +7,8 @@ import { configureQuepasaWebhook } from '../services/quepasaMessageService';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 import { Response } from 'express';
 import { checkConnectionQuota } from '../middleware/quotaMiddleware';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
+import { wahaRequest } from '../lib/wahaRequest';
 
 const fetch = require('node-fetch');
 const crypto = require('crypto');
@@ -52,58 +51,26 @@ const getEvolutionCredentialsFromSession = (session: any): { url: string; apiKey
   return null;
 };
 
-const wahaRequest = async (endpoint: string, options: any = {}) => {
-  // Buscar configurações dinâmicas do banco usando o método específico
-  const config = await settingsService.getWahaConfig();
-  const WAHA_BASE_URL = config.host || process.env.WAHA_BASE_URL || process.env.DEFAULT_WAHA_HOST || '';
-  const WAHA_API_KEY = config.apiKey || process.env.WAHA_API_KEY || process.env.DEFAULT_WAHA_API_KEY || '';
-
-  console.log('🔍 WAHA Config Debug (routes):', {
-    host: config.host,
-    apiKey: config.apiKey ? `${config.apiKey.substring(0, 8)}...` : 'undefined',
-    finalUrl: WAHA_BASE_URL,
-    finalKey: WAHA_API_KEY ? `${WAHA_API_KEY.substring(0, 8)}...` : 'undefined'
-  });
-
-  if (!WAHA_BASE_URL || !WAHA_API_KEY) {
-    throw new Error('Configurações WAHA não encontradas. Configure o Host e API Key nas configurações do sistema.');
-  }
-
-  const url = `${WAHA_BASE_URL}${endpoint}`;
-
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-KEY': WAHA_API_KEY,
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`WAHA API Error: ${response.status} ${response.statusText}`);
-  }
-
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    return response.json();
-  }
-
-  return response.text();
-};
-
 const router = Router();
 
-// Listar todas as sessões sincronizadas com WAHA API
+// Listar todas as sessões (leitura rápida do banco — sem sync com APIs externas)
 router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const headerTenantId = req.header('X-Tenant-Id');
-    console.log('📋 GET /sessions - user:', req.user?.email, 'role:', req.user?.role, 'tenantId:', req.tenantId, 'X-Tenant-Id header:', headerTenantId);
+    const tenantId = req.tenantId;
+    const sessions = await WhatsAppSessionService.getAllSessions(tenantId);
+    res.json(sessions);
+  } catch (error) {
+    console.error('Erro ao listar sessões:', error);
+    res.status(500).json({ error: 'Erro ao listar sessões WhatsApp' });
+  }
+});
 
-    // Sempre usar o tenantId do token (mesmo para SUPERADMIN quando tem empresa selecionada)
+// Sincronizar sessões com APIs externas (WAHA, Quepasa, Evolution)
+router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
+  try {
     const tenantId = req.tenantId;
 
-    // ── Buscar TODAS as sessões do tenant UMA ÚNICA VEZ (antes: 4 queries idênticas) ──
+    // ── Buscar TODAS as sessões do tenant UMA ÚNICA VEZ ──
     const allDbSessions = await WhatsAppSessionService.getAllSessions(tenantId);
 
     // ── Helper: processar itens em batches paralelos ──
@@ -121,7 +88,7 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
       console.log(`🔄 Atualizando status de ${wahaSessionsFiltered.length} sessões WAHA do tenant...`);
       await processInBatches(wahaSessionsFiltered, 5, async (session: any) => {
         try {
-          await WahaSyncService.syncSession(session.name);
+          await WahaSyncService.syncSessionWithExisting(session.name, session);
         } catch (err) {
           console.warn(`⚠️ Erro ao sincronizar sessão WAHA ${session.name}:`, err);
         }
@@ -200,19 +167,19 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
                           if (!existingWithToken) {
                             console.log(`✅ Servidor ready encontrado para ${session.name}! Token: ${server.token.substring(0, 16)}...`);
 
-                            // Atualizar sessão com o token real da QuePasa
-                            await WhatsAppSessionService.createOrUpdateSession({
-                              name: session.name,
-                              status: 'WORKING',
-                              provider: 'QUEPASA',
-                              tenantId: (session as any).tenantId,
-                              displayName: (session as any).displayName,
-                              quepasaToken: server.token,
-                              me: {
+                            // Atualizar sessão com o token real da QuePasa (método rápido)
+                            await WhatsAppSessionService.updateStatusFast(
+                              session.name,
+                              'WORKING',
+                              {
                                 id: server.wid || server.number || 'unknown',
                                 pushName: server.name || 'Quepasa'
+                              },
+                              {
+                                quepasaToken: server.token,
+                                displayName: (session as any).displayName
                               }
-                            });
+                            );
 
                             console.log(`💾 Sessão ${session.name} atualizada para WORKING com token real`);
 
@@ -290,15 +257,13 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
               const previousStatus = (session as any).status;
               const isNewlyConnected = mappedStatus === 'WORKING' && previousStatus !== 'WORKING';
 
-              // Atualizar status no banco (manter o token que já foi salvo/descoberto)
-              await WhatsAppSessionService.createOrUpdateSession({
-                name: session.name,
-                status: mappedStatus,
-                provider: 'QUEPASA',
-                tenantId: session.tenantId || undefined,
-                quepasaToken: sessionToken, // IMPORTANTE: preservar o token
-                me: meData
-              });
+              // Atualizar status no banco (usa método rápido — sessão já existe)
+              await WhatsAppSessionService.updateStatusFast(
+                session.name,
+                mappedStatus,
+                meData,
+                { quepasaToken: sessionToken }
+              );
 
               // Se acabou de conectar (WORKING), configurar webhook se campanha interativa estiver habilitada
               if (isNewlyConnected) {
@@ -401,19 +366,13 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
               };
             }
 
-            // Atualizar sessão no banco (já existe, só atualiza status)
+            // Atualizar sessão no banco (já existe, só atualiza status — usa método rápido)
             if (mappedStatus && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(mappedStatus)) {
-              await WhatsAppSessionService.createOrUpdateSession({
-                name: session.name,
-                displayName: session.displayName,
-                status: mappedStatus as 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED',
-                provider: 'EVOLUTION',
-                me: meData,
-                qr: session.qr || undefined,
-                qrExpiresAt: session.qrExpiresAt || undefined,
-                tenantId: session.tenantId || undefined // Manter o tenantId original
-              });
-              console.log(`✅ Sessão Evolution "${session.name}" atualizada com status ${mappedStatus}`);
+              await WhatsAppSessionService.updateStatusFast(
+                session.name,
+                mappedStatus,
+                meData
+              );
             }
           } catch (instanceError) {
             console.warn(`⚠️ Erro ao atualizar sessão Evolution ${session.name}:`, instanceError);
@@ -428,8 +387,8 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
     const updatedSessions = await WhatsAppSessionService.getAllSessions(tenantId);
     res.json(updatedSessions);
   } catch (error) {
-    console.error('Erro ao listar sessões:', error);
-    res.status(500).json({ error: 'Erro ao listar sessões WhatsApp' });
+    console.error('Erro ao sincronizar sessões:', error);
+    res.status(500).json({ error: 'Erro ao sincronizar sessões WhatsApp' });
   }
 });
 
@@ -1289,25 +1248,26 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
   }
 });
 
-// Obter status da sessão
+// Obter status da sessão (leitura rápida do banco — para polling do QR modal)
 router.get('/sessions/:sessionName/status', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { sessionName } = req.params;
-    console.log('🔍 GET /sessions/:sessionName/status - sessionName:', sessionName, 'user:', req.user?.email, 'tenantId:', req.tenantId);
-
-    // SUPERADMIN pode ver status de qualquer sessão, outros usuários só do seu tenant
     const tenantId = req.user?.role === 'SUPERADMIN' ? undefined : req.tenantId;
 
-    // Verificar se a sessão pertence ao tenant
     try {
-      await WhatsAppSessionService.getSession(sessionName, tenantId);
+      const session = await WhatsAppSessionService.getSession(sessionName, tenantId);
+      res.json({
+        name: session.name,
+        displayName: session.displayName,
+        status: session.status,
+        provider: session.provider,
+        me: session.me,
+        qr: session.qr,
+        qrExpiresAt: session.qrExpiresAt,
+      });
     } catch (error) {
-      console.error('❌ Sessão não encontrada ou não pertence ao tenant:', error);
       return res.status(404).json({ error: 'Sessão não encontrada' });
     }
-
-    const status = await wahaRequest(`/api/sessions/${sessionName}/status`);
-    res.json(status);
   } catch (error) {
     console.error('Erro ao obter status:', error);
     res.status(500).json({ error: 'Erro ao obter status da sessão' });

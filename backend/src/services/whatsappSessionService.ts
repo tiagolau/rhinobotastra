@@ -1,6 +1,4 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export interface WhatsAppSessionData {
   name: string; // Nome real usado na API (ex: vendas_c52982e8)
@@ -25,12 +23,7 @@ export interface WhatsAppSessionData {
 
 export class WhatsAppSessionService {
   static async getAllSessions(tenantId?: string) {
-    console.log('📋 WhatsAppSessionService.getAllSessions - tenantId:', tenantId);
-
-    // Construir filtros dinâmicos
     const where: any = {};
-
-    // Filtro por tenant (SUPERADMIN vê todos se tenantId for undefined)
     if (tenantId) {
       where.tenantId = tenantId;
     }
@@ -39,8 +32,6 @@ export class WhatsAppSessionService {
       where,
       orderBy: { atualizadoEm: 'desc' }
     });
-
-    console.log('📋 WhatsAppSessionService.getAllSessions - sessões encontradas:', sessions.length);
 
     return sessions.map(session => ({
       name: session.name,
@@ -63,12 +54,7 @@ export class WhatsAppSessionService {
   }
 
   static async getSession(name: string, tenantId?: string) {
-    console.log('🔍 WhatsAppSessionService.getSession - name:', name, 'tenantId:', tenantId);
-
-    // Construir where clause com tenant isolation
     const where: any = { name };
-
-    // Se tenantId for fornecido, aplicar filtro de tenant
     if (tenantId) {
       where.tenantId = tenantId;
     }
@@ -78,8 +64,6 @@ export class WhatsAppSessionService {
     if (!session) {
       throw new Error('Sessão não encontrada');
     }
-
-    console.log('✅ WhatsAppSessionService.getSession - sessão encontrada:', session.name);
 
     return {
       name: session.name,
@@ -102,13 +86,6 @@ export class WhatsAppSessionService {
   }
 
   static async createOrUpdateSession(data: WhatsAppSessionData) {
-    console.log('💾 WhatsAppSessionService.createOrUpdateSession - data:', {
-      name: data.name,
-      tenantId: data.tenantId,
-      interactiveCampaignEnabled: data.interactiveCampaignEnabled,
-      webhookSecret: data.webhookSecret ? '***' : undefined
-    });
-
     // Dados base para criação
     const baseData = {
       name: data.name,
@@ -160,9 +137,6 @@ export class WhatsAppSessionService {
   }
 
   static async deleteSession(name: string, tenantId?: string) {
-    console.log('🗑️ WhatsAppSessionService.deleteSession - name:', name, 'tenantId:', tenantId);
-
-    // Construir where clause com tenant isolation
     const where: any = { name };
 
     // Verificar se a sessão existe e pertence ao tenant (se aplicável)
@@ -179,14 +153,9 @@ export class WhatsAppSessionService {
     await prisma.whatsAppSession.delete({
       where: { name }
     });
-
-    console.log('✅ WhatsAppSessionService.deleteSession - sessão deletada:', name);
   }
 
   static async updateSessionStatus(name: string, status: string, additionalData?: Partial<WhatsAppSessionData>, tenantId?: string) {
-    console.log('🔄 WhatsAppSessionService.updateSessionStatus - name:', name, 'tenantId:', tenantId);
-
-    // Verificar se a sessão existe e pertence ao tenant (se aplicável)
     if (tenantId) {
       const session = await prisma.whatsAppSession.findFirst({
         where: { name, tenantId }
@@ -229,7 +198,69 @@ export class WhatsAppSessionService {
       where: { name },
       data: updateData
     });
+  }
 
-    console.log('✅ WhatsAppSessionService.updateSessionStatus - status atualizado:', name);
+  /**
+   * Atualização rápida de status para operações de sync onde a sessão já existe.
+   * Single UPDATE — sem verificação de tenant, sem serialização JSON de config.
+   */
+  static async updateStatusFast(
+    name: string,
+    status: string,
+    meData?: { id: string; pushName: string; lid?: string; jid?: string },
+    additionalFields?: { qr?: string | null; qrExpiresAt?: Date | null; assignedWorker?: string | null; quepasaToken?: string | null; displayName?: string }
+  ) {
+    const updateData: any = {
+      status,
+      atualizadoEm: new Date(),
+    };
+
+    if (meData) {
+      updateData.meId = meData.id;
+      updateData.mePushName = meData.pushName;
+      updateData.meLid = meData.lid || null;
+      updateData.meJid = meData.jid || null;
+    }
+
+    if (additionalFields?.qr !== undefined) updateData.qr = additionalFields.qr;
+    if (additionalFields?.qrExpiresAt !== undefined) updateData.qrExpiresAt = additionalFields.qrExpiresAt;
+    if (additionalFields?.assignedWorker !== undefined) updateData.assignedWorker = additionalFields.assignedWorker;
+    if (additionalFields?.quepasaToken !== undefined) updateData.quepasaToken = additionalFields.quepasaToken;
+    if (additionalFields?.displayName !== undefined) updateData.displayName = additionalFields.displayName;
+
+    await prisma.whatsAppSession.update({
+      where: { name },
+      data: updateData,
+    });
+  }
+
+  /**
+   * Atualização em batch de múltiplas sessões numa única transação.
+   * Usado após sync para minimizar round-trips ao banco.
+   */
+  static async batchUpdateStatus(
+    updates: Array<{
+      name: string;
+      status: string;
+      me?: { id: string; pushName: string; lid?: string; jid?: string };
+    }>
+  ) {
+    if (updates.length === 0) return;
+
+    const operations = updates.map((u) =>
+      prisma.whatsAppSession.update({
+        where: { name: u.name },
+        data: {
+          status: u.status,
+          meId: u.me?.id || undefined,
+          mePushName: u.me?.pushName || undefined,
+          meLid: u.me?.lid || undefined,
+          meJid: u.me?.jid || undefined,
+          atualizadoEm: new Date(),
+        },
+      })
+    );
+
+    await prisma.$transaction(operations);
   }
 }

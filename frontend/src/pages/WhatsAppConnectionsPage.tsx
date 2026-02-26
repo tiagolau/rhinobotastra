@@ -4,6 +4,8 @@ import { Header } from '../components/Header';
 import { Portal } from '../components/Portal';
 import { useSettings } from '../hooks/useSettings';
 import { useTenant } from '../contexts/TenantContext';
+import { useWhatsAppSessions } from '../hooks/useWhatsAppSessions';
+import type { WhatsAppSession } from '../hooks/useWhatsAppSessions';
 
 // Componente para exibir contador do QR Code
 function QRCountdown({ expiresAt }: { expiresAt: Date }) {
@@ -42,25 +44,13 @@ function QRCountdown({ expiresAt }: { expiresAt: Date }) {
   );
 }
 
-interface WhatsAppSession {
-  name: string; // Nome real usado na API (ex: vendas_c52982e8)
-  displayName?: string; // Nome exibido ao usuário (ex: vendas)
-  status: 'WORKING' | 'SCAN_QR_CODE' | 'STOPPED' | 'FAILED';
-  provider: 'WAHA' | 'EVOLUTION' | 'QUEPASA';
-  qr?: string;
-  qrExpiresAt?: Date;
-  me?: {
-    id: string;
-    pushName: string;
-  };
-}
-
-
 export function WhatsAppConnectionsPage() {
   const { settings } = useSettings();
   const { selectedTenantId, loading: tenantLoading } = useTenant();
-  const [sessions, setSessions] = useState<WhatsAppSession[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    sessions, loading, listSessions, syncSessions,
+    pollSessionStatus, authenticatedFetch
+  } = useWhatsAppSessions({ listIntervalMs: 5000, syncIntervalMs: 60000 });
   const [newSessionName, setNewSessionName] = useState('');
   const [newSessionProvider, setNewSessionProvider] = useState<'WAHA' | 'EVOLUTION' | 'QUEPASA'>('WAHA');
   const [interactiveCampaignEnabled, setInteractiveCampaignEnabled] = useState(false);
@@ -94,29 +84,6 @@ export function WhatsAppConnectionsPage() {
     });
   }, []);
 
-  // Helper para fazer requisições autenticadas
-  const authenticatedFetch = async (url: string, options: RequestInit = {}) => {
-    const token = localStorage.getItem('auth_token');
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
-
-    if (token) {
-      (headers as Record<string, string>).Authorization = `Bearer ${token}`;
-    }
-
-    // Adicionar tenant ID no header para SuperAdmin
-    if (selectedTenantId) {
-      (headers as Record<string, string>)['X-Tenant-Id'] = selectedTenantId;
-    }
-
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
-
   // Carregar provedores permitidos do tenant
   const loadAllowedProviders = async () => {
     try {
@@ -136,119 +103,29 @@ export function WhatsAppConnectionsPage() {
     }
   };
 
+  // Carregar provedores permitidos quando tenant muda
   useEffect(() => {
-    // Não carregar sessões até que o tenant esteja definido
-    if (tenantLoading || !selectedTenantId) {
-      return;
-    }
-
-    // Carregar provedores permitidos
+    if (tenantLoading || !selectedTenantId) return;
     loadAllowedProviders();
+  }, [selectedTenantId, tenantLoading]);
 
-    // Recarregar sessões quando o tenant mudar
-    loadSessions();
-
-    // Iniciar polling a cada 5 segundos
-    const interval = setInterval(() => {
-      loadSessions(false); // Não mostrar loading durante polling automático
-    }, 5000);
-
-    return () => {
-      if (interval) {
-        clearInterval(interval);
-      }
-    };
-  }, [selectedTenantId, tenantLoading]); // Recarrega quando o tenant mudar ou terminar de carregar
-
-  // Polling para verificar se a conexão foi estabelecida quando o modal QR está aberto
+  // Polling do QR modal — usa endpoint leve de status de sessão individual
   useEffect(() => {
-    if (!qrModalOpen || !currentQRSession) {
-      return;
-    }
+    if (!qrModalOpen || !currentQRSession) return;
 
-    const checkConnection = async () => {
-      try {
-        const response = await authenticatedFetch('/api/waha/sessions');
-        if (response.ok) {
-          const sessions = await response.json();
-          const updatedSession = sessions.find((s: any) => s.name === currentQRSession.name);
-
-          if (updatedSession) {
-            console.log(`🔍 Polling - sessão ${currentQRSession.name}:`, {
-              provider: updatedSession.provider,
-              status: updatedSession.status,
-              me: updatedSession.me
-            });
-
-            // Se a sessão mudou para WORKING (conectada)
-            if (updatedSession.status === 'WORKING') {
-              console.log(`✅ Sessão ${currentQRSession.name} conectada! Fechando modal...`);
-
-              // Fechar modal
-              setQrModalOpen(false);
-              setCurrentQRSession(null);
-
-              // Atualizar lista de sessões imediatamente
-              await loadSessions(false);
-
-              // Mostrar notificação de sucesso
-              const userName = updatedSession.me?.pushName || 'Usuário';
-              toast.success(`WhatsApp conectado com sucesso! Logado como: ${userName}`);
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Erro ao verificar status da conexão:', error);
+    const interval = setInterval(async () => {
+      const updated = await pollSessionStatus(currentQRSession.name);
+      if (updated?.status === 'WORKING') {
+        setQrModalOpen(false);
+        setCurrentQRSession(null);
+        await listSessions(false);
+        const userName = updated.me?.pushName || 'Usuário';
+        toast.success(`WhatsApp conectado com sucesso! Logado como: ${userName}`);
       }
-    };
+    }, 2000);
 
-    // Verificar imediatamente
-    checkConnection();
-
-    // Depois verificar a cada 2 segundos (polling mais frequente)
-    const interval = setInterval(checkConnection, 2000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [qrModalOpen, currentQRSession]);
-
-  const loadSessions = async (showLoading = true) => {
-    try {
-      if (showLoading) {
-        setLoading(true);
-      }
-      const response = await authenticatedFetch('/api/waha/sessions');
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      // Processar dados das sessões incluindo QR code salvo no banco
-      const processedSessions = data.map((session: any) => ({
-        name: session.name,
-        displayName: session.displayName || session.name,
-        status: session.status || 'STOPPED',
-        provider: session.provider || 'WAHA',
-        me: session.me || null,
-        qr: session.qr || null,
-        qrExpiresAt: session.qrExpiresAt ? new Date(session.qrExpiresAt) : undefined
-      }));
-
-      setSessions(processedSessions);
-      if (showLoading) {
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Erro ao carregar sessões:', error);
-      if (showLoading) {
-        toast.error('Erro ao carregar sessões WhatsApp');
-        setLoading(false);
-      }
-    }
-  };
+    return () => clearInterval(interval);
+  }, [qrModalOpen, currentQRSession, pollSessionStatus, listSessions]);
 
   const importEvolutionSession = async () => {
     if (!importEvolutionUrl.trim() || !importEvolutionInstance.trim() || !importEvolutionApiKey.trim()) {
@@ -280,7 +157,7 @@ export function WhatsAppConnectionsPage() {
       setImportEvolutionInstance('');
       setImportEvolutionApiKey('');
       setImportEvolutionDisplayName('');
-      await loadSessions();
+      await listSessions(true);
     } catch (error) {
       console.error('Erro ao importar sessão:', error);
       toast.error(error instanceof Error ? error.message : 'Erro ao importar sessão');
@@ -344,7 +221,7 @@ export function WhatsAppConnectionsPage() {
       setNewSessionProvider('WAHA');
 
       // Recarregar imediatamente
-      await loadSessions();
+      await listSessions(true);
 
       // Se for Evolution e veio QR code, abrir modal automaticamente
       if (newSessionProvider === 'EVOLUTION' && createdSessionData.qrcode?.base64) {
@@ -361,7 +238,7 @@ export function WhatsAppConnectionsPage() {
 
       // Aguardar mais um pouco e recarregar novamente para pegar status atualizado
       setTimeout(() => {
-        loadSessions(false);
+        listSessions(false);
       }, 2000);
     } catch (error) {
       console.error('Erro ao criar sessão:', error);
@@ -390,7 +267,7 @@ export function WhatsAppConnectionsPage() {
       }
 
       toast.success('Sessão removida com sucesso');
-      loadSessions();
+      listSessions(true);
     } catch (error) {
       console.error('Erro ao remover sessão:', error);
       toast.error(error instanceof Error ? error.message : 'Erro ao remover sessão');
@@ -412,7 +289,7 @@ export function WhatsAppConnectionsPage() {
 
       // Aguardar um pouco antes de recarregar
       setTimeout(() => {
-        loadSessions(false);
+        listSessions(false);
       }, 1000);
     } catch (error) {
       console.error('Erro ao reiniciar sessão:', error);
@@ -438,7 +315,7 @@ export function WhatsAppConnectionsPage() {
       // Aguardar um pouco e abrir modal para mostrar QR
       setTimeout(async () => {
         await openQRModal(sessionName);
-        loadSessions(false);
+        listSessions(false);
       }, 2000);
 
     } catch (error) {
@@ -505,7 +382,7 @@ export function WhatsAppConnectionsPage() {
 
           // Recarregar sessões para obter dados atualizados do banco
           setTimeout(() => {
-            loadSessions(false);
+            listSessions(false);
           }, 1000);
         } else {
           toast.error('QR Code não disponível');
@@ -524,7 +401,7 @@ export function WhatsAppConnectionsPage() {
     setQrModalOpen(false);
     setCurrentQRSession(null);
     // Recarregar sessões para verificar se conectou
-    loadSessions(false);
+    listSessions(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -586,7 +463,7 @@ export function WhatsAppConnectionsPage() {
               + Nova Sessão
             </button>
             <button
-              onClick={() => loadSessions()}
+              onClick={() => syncSessions()}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium transition-colors"
             >
               Atualizar
