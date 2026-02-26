@@ -38,12 +38,12 @@ const evolutionRequestWithCredentials = async (baseUrl: string, apiKey: string, 
   return response;
 };
 
-// Busca credenciais Evolution para uma sessão (customizadas ou globais)
-const getEvolutionCredentialsForSession = async (sessionName: string): Promise<{ url: string; apiKey: string } | null> => {
+// Busca credenciais Evolution para uma sessão a partir dos dados já carregados (sem query extra)
+const getEvolutionCredentialsFromSession = (session: any): { url: string; apiKey: string } | null => {
   try {
-    const session = await prisma.whatsAppSession.findUnique({ where: { name: sessionName } });
-    if (session?.config) {
-      const config = JSON.parse(session.config);
+    const configStr = typeof session.config === 'string' ? session.config : null;
+    if (configStr) {
+      const config = JSON.parse(configStr);
       if (config.evolutionUrl && config.evolutionApiKey) {
         return { url: config.evolutionUrl, apiKey: config.evolutionApiKey };
       }
@@ -103,37 +103,36 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
     // Sempre usar o tenantId do token (mesmo para SUPERADMIN quando tem empresa selecionada)
     const tenantId = req.tenantId;
 
-    // Sincronizar apenas sessões WAHA que já existem no banco DESTE tenant
-    // NÃO buscar sessões externas - sistema SaaS multi-tenant
-    try {
-      const wahaSessions = await WhatsAppSessionService.getAllSessions(tenantId);
-      const wahaSessionsFiltered = wahaSessions.filter(s => s.provider === 'WAHA');
+    // ── Buscar TODAS as sessões do tenant UMA ÚNICA VEZ (antes: 4 queries idênticas) ──
+    const allDbSessions = await WhatsAppSessionService.getAllSessions(tenantId);
 
-      if (wahaSessionsFiltered.length > 0) {
-        console.log(`🔄 Atualizando status de ${wahaSessionsFiltered.length} sessões WAHA do tenant...`);
-        for (const session of wahaSessionsFiltered) {
-          try {
-            await WahaSyncService.syncSession(session.name);
-          } catch (err) {
-            console.warn(`⚠️ Erro ao sincronizar sessão WAHA ${session.name}:`, err);
-          }
-        }
+    // ── Helper: processar itens em batches paralelos ──
+    const processInBatches = async <T>(items: T[], batchSize: number, fn: (item: T) => Promise<void>) => {
+      for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        await Promise.allSettled(batch.map(fn));
       }
-    } catch (wahaError) {
-      console.warn('⚠️ Erro ao sincronizar WAHA, mas continuando com dados do banco:', wahaError);
-    }
+    };
 
-    // Sincronizar sessões Quepasa
-    try {
-      console.log('🔄 Sincronizando status das sessões Quepasa...');
-      const quepasaSessions = await WhatsAppSessionService.getAllSessions(tenantId);
+    // ── Sync WAHA (paralelo em batches de 5) ──
+    const syncWaha = async () => {
+      const wahaSessionsFiltered = allDbSessions.filter((s: any) => s.provider === 'WAHA');
+      if (wahaSessionsFiltered.length === 0) return;
+      console.log(`🔄 Atualizando status de ${wahaSessionsFiltered.length} sessões WAHA do tenant...`);
+      await processInBatches(wahaSessionsFiltered, 5, async (session: any) => {
+        try {
+          await WahaSyncService.syncSession(session.name);
+        } catch (err) {
+          console.warn(`⚠️ Erro ao sincronizar sessão WAHA ${session.name}:`, err);
+        }
+      });
+    };
+
+    // ── Sync Quepasa (sequencial — evita race condition na descoberta de servidores) ──
+    const syncQuepasa = async () => {
+      const quepasaSessionsFiltered = allDbSessions.filter((s: any) => s.provider === 'QUEPASA');
+      if (quepasaSessionsFiltered.length === 0) return;
       const quepasaConfig = await settingsService.getQuepasaConfig();
-
-      console.log(`📊 Total de sessões: ${quepasaSessions.length}`);
-      const quepasaSessionsFiltered = quepasaSessions.filter(s => s.provider === 'QUEPASA');
-      console.log(`📊 Sessões Quepasa encontradas: ${quepasaSessionsFiltered.length}`, quepasaSessionsFiltered.map(s => s.name));
-      console.log(`📊 Config Quepasa - URL: ${quepasaConfig.url ? 'configurada' : 'não configurada'}, Login: ${quepasaConfig.login}, Token: ${quepasaConfig.password ? 'configurado' : 'não configurado'}`);
-
       if (quepasaConfig.url && quepasaConfig.login) {
         for (const session of quepasaSessionsFiltered) {
           try {
@@ -326,23 +325,17 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
           }
         }
       }
-    } catch (quepasaError) {
-      console.warn('⚠️ Erro ao sincronizar Quepasa, mas continuando com dados do banco:', quepasaError);
-    }
+    };
 
-    // Sincronizar apenas sessões Evolution que já existem no banco DESTE tenant
-    // NÃO buscar sessões externas - sistema SaaS multi-tenant
-    try {
-      const allSessions = await WhatsAppSessionService.getAllSessions(tenantId);
-      const evolutionSessions = allSessions.filter(s => s.provider === 'EVOLUTION');
-
-      if (evolutionSessions.length > 0) {
-        console.log(`🔄 Atualizando status de ${evolutionSessions.length} sessões Evolution do tenant...`);
-
-        for (const session of evolutionSessions) {
-          try {
-            // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
-            const customCreds = await getEvolutionCredentialsForSession(session.name);
+    // ── Sync Evolution (paralelo em batches de 5) ──
+    const syncEvolution = async () => {
+      const evolutionSessions = allDbSessions.filter((s: any) => s.provider === 'EVOLUTION');
+      if (evolutionSessions.length === 0) return;
+      console.log(`🔄 Atualizando status de ${evolutionSessions.length} sessões Evolution do tenant...`);
+      await processInBatches(evolutionSessions, 5, async (session: any) => {
+        try {
+          // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
+          const customCreds = getEvolutionCredentialsFromSession(session);
 
             let mappedStatus = 'STOPPED';
             let instanceInfo: any = null;
@@ -425,11 +418,11 @@ router.get('/sessions', authMiddleware, async (req: AuthenticatedRequest, res: R
           } catch (instanceError) {
             console.warn(`⚠️ Erro ao atualizar sessão Evolution ${session.name}:`, instanceError);
           }
-        }
-      }
-    } catch (evolutionError) {
-      console.warn('⚠️ Erro ao sincronizar Evolution, mas continuando com dados do banco:', evolutionError);
-    }
+      });
+    };
+
+    // ── Executar os 3 provedores em PARALELO ──
+    await Promise.allSettled([syncWaha(), syncQuepasa(), syncEvolution()]);
 
     // Retornar todas as sessões atualizadas do banco
     const updatedSessions = await WhatsAppSessionService.getAllSessions(tenantId);

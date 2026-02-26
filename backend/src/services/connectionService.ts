@@ -51,26 +51,26 @@ export const connectionService = {
    * Busca tanto da tabela Connection (nova) quanto WhatsAppSession (antiga) para compatibilidade
    */
   async listConnections(tenantId?: string) {
-    // Buscar da tabela Connection (nova)
-    const connections = await prisma.connection.findMany({
-      where: tenantId ? { tenantId } : undefined,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Buscar também da tabela WhatsAppSession (antiga) para compatibilidade
-    const whatsappSessions = await prisma.whatsAppSession.findMany({
-      where: tenantId ? { tenantId } : undefined,
-      orderBy: { criadoEm: 'desc' },
-      select: {
-        id: true,
-        name: true,
-        displayName: true,
-        status: true,
-        provider: true,
-        tenantId: true,
-        meJid: true,
-      },
-    });
+    // Buscar Connection (nova) e WhatsAppSession (antiga) em PARALELO
+    const [connections, whatsappSessions] = await Promise.all([
+      prisma.connection.findMany({
+        where: tenantId ? { tenantId } : undefined,
+        orderBy: { createdAt: 'desc' },
+      }),
+      prisma.whatsAppSession.findMany({
+        where: tenantId ? { tenantId } : undefined,
+        orderBy: { criadoEm: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          displayName: true,
+          status: true,
+          provider: true,
+          tenantId: true,
+          meJid: true,
+        },
+      }),
+    ]);
 
     // Converter WhatsAppSessions para o formato de Connection
     const sessionsAsConnections = whatsappSessions.map((session) => ({

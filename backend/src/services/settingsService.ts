@@ -5,6 +5,8 @@ const prisma = new PrismaClient();
 export class SettingsService {
   private static instance: SettingsService;
   private cachedSettings: any = null;
+  private cacheExpiry: number = 0;
+  private static CACHE_TTL_MS = 30_000; // 30 seconds
 
   public static getInstance(): SettingsService {
     if (!SettingsService.instance) {
@@ -14,6 +16,11 @@ export class SettingsService {
   }
 
   async getSettings() {
+    // Return cached settings if still valid
+    if (this.cachedSettings && Date.now() < this.cacheExpiry) {
+      return this.cachedSettings;
+    }
+
     try {
       // Buscar configurações globais do banco
       let settings = await prisma.globalSettings.findFirst();
@@ -36,9 +43,12 @@ export class SettingsService {
       }
 
       this.cachedSettings = settings;
+      this.cacheExpiry = Date.now() + SettingsService.CACHE_TTL_MS;
       return settings;
     } catch (error) {
       console.error('Error getting settings:', error);
+      // If we have stale cache, use it as fallback
+      if (this.cachedSettings) return this.cachedSettings;
       // Retornar configurações padrão se houver erro
       return {
         wahaHost: '',
@@ -117,6 +127,7 @@ export class SettingsService {
 
       // Limpar cache
       this.cachedSettings = null;
+      this.cacheExpiry = 0;
 
       return settings;
     } catch (error) {
