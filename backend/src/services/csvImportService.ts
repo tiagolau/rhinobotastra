@@ -52,7 +52,7 @@ export class CSVImportService {
     return { allowed: true, remaining };
   }
 
-  static async importContacts(filePath: string, tenantId: string): Promise<ImportResult> {
+  static async importContacts(filePath: string, tenantId: string, categoryId?: string): Promise<ImportResult> {
     const results: CSVRow[] = [];
     const errors: string[] = [];
     let successfulImports = 0;
@@ -67,7 +67,7 @@ export class CSVImportService {
           results.push(data);
         })
         .on('end', async () => {
-          console.log(`📊 CSVImportService - Processando ${results.length} linhas do CSV para tenantId: ${tenantId}`);
+          console.log(`📊 CSVImportService - Processando ${results.length} linhas do CSV para tenantId: ${tenantId}, categoryId: ${categoryId || 'nenhuma'}`);
 
           // Verificar quota ANTES de importar
           const quotaCheck = await CSVImportService.checkQuotaForImport(tenantId, results.length);
@@ -91,6 +91,20 @@ export class CSVImportService {
 
           console.log(`✅ CSVImportService - Quota verificada. Disponível: ${quotaCheck.remaining} contatos`);
 
+          // Validar categoryId global uma vez antes do loop
+          let validatedCategoryId: string | undefined = undefined;
+          if (categoryId) {
+            const categoryExists = await prisma.category.findUnique({
+              where: { id: categoryId }
+            });
+            if (categoryExists) {
+              validatedCategoryId = categoryId;
+              console.log(`📂 CSVImportService - Categoria global validada: ${categoryExists.nome} (${categoryId})`);
+            } else {
+              console.log(`⚠️ CSVImportService - Categoria global "${categoryId}" não encontrada, ignorando`);
+            }
+          }
+
           for (let i = 0; i < results.length; i++) {
             const row = results[i];
             const rowNumber = i + 2; // +2 porque CSV tem header e arrays começam em 0
@@ -109,13 +123,30 @@ export class CSVImportService {
 
               // Preparar dados do contato incluindo tenantId
               const tags = row.tags ? row.tags.split(',').map((tag: string) => tag.trim()) : [];
+
+              // Categoria global tem prioridade sobre a do CSV
+              let categoriaId: string | undefined = validatedCategoryId;
+              if (!categoriaId) {
+                const rawCategoriaId = row.categoriaid?.trim();
+                if (rawCategoriaId) {
+                  const categoriaExists = await prisma.category.findUnique({
+                    where: { id: rawCategoriaId }
+                  });
+                  if (categoriaExists) {
+                    categoriaId = rawCategoriaId;
+                  } else {
+                    console.log(`⚠️ Linha ${rowNumber} - categoriaId "${rawCategoriaId}" não encontrada, ignorando`);
+                  }
+                }
+              }
+
               const contactData: ContactInput = {
                 nome: row.nome.trim(),
                 telefone: row.telefone.trim(),
                 email: row.email?.trim() || undefined,
                 observacoes: row.observacoes?.trim() || undefined,
                 tags: tags,
-                categoriaId: row.categoriaid?.trim() || undefined,
+                categoriaId: categoriaId,
                 tenantId: tenantId
               };
 

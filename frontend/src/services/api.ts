@@ -133,9 +133,12 @@ class ApiService {
   }
 
   // CSV Import methods
-  async importCSV(file: File): Promise<ImportResult> {
+  async importCSV(file: File, categoryId?: string): Promise<ImportResult> {
     const formData = new FormData();
     formData.append('csv', file);
+    if (categoryId) {
+      formData.append('categoryId', categoryId);
+    }
 
     const token = localStorage.getItem('auth_token');
     const headers: HeadersInit = {};

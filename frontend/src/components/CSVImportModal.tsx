@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { ImportResult } from '../types';
+import { ImportResult, Category } from '../types';
 import { apiService } from '../services/api';
 
 interface CSVImportModalProps {
@@ -13,6 +13,16 @@ export function CSVImportModal({ isOpen, onClose, onSuccess }: CSVImportModalPro
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+
+  useEffect(() => {
+    if (isOpen) {
+      apiService.getAllCategories()
+        .then(setCategories)
+        .catch((err) => console.error('Erro ao carregar categorias:', err));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -36,7 +46,7 @@ export function CSVImportModal({ isOpen, onClose, onSuccess }: CSVImportModalPro
 
     setIsUploading(true);
     try {
-      const result = await apiService.importCSV(file);
+      const result = await apiService.importCSV(file, selectedCategoryId || undefined);
       setImportResult(result);
 
       if (result.success) {
@@ -80,6 +90,7 @@ export function CSVImportModal({ isOpen, onClose, onSuccess }: CSVImportModalPro
   const handleClose = () => {
     setFile(null);
     setImportResult(null);
+    setSelectedCategoryId('');
     onClose();
   };
 
@@ -165,12 +176,35 @@ export function CSVImportModal({ isOpen, onClose, onSuccess }: CSVImportModalPro
             )}
           </div>
 
+          {/* Category Selector */}
+          <div>
+            <label htmlFor="category-select" className="block text-sm font-medium text-gray-700 mb-2">
+              Categoria (opcional)
+            </label>
+            <select
+              id="category-select"
+              value={selectedCategoryId}
+              onChange={(e) => setSelectedCategoryId(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Nenhuma categoria</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.nome}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Aplica a categoria selecionada a todos os contatos importados
+            </p>
+          </div>
+
           {/* Import Instructions */}
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
             <h3 className="font-medium text-gray-900 text-sm mb-2">ℹ️ Instruções</h3>
             <ul className="text-xs text-gray-600 space-y-1">
               <li>• Colunas obrigatórias: <strong>nome</strong> e <strong>telefone</strong></li>
-              <li>• Opcionais: email, observacoes, categoriaId</li>
+              <li>• Opcionais: email, observacoes</li>
               <li>• Use o template como referência</li>
             </ul>
           </div>

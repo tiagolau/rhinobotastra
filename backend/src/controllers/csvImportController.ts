@@ -53,9 +53,11 @@ export class CSVImportController {
         return res.status(403).json(apiError);
       }
 
-      console.log('📤 Upload recebido:', req.file.originalname, req.file.filename, 'tenantId:', tenantId);
+      const categoryId = req.body?.categoryId as string | undefined;
 
-      const result = await CSVImportService.importContacts(req.file.path, tenantId);
+      console.log('📤 Upload recebido:', req.file.originalname, req.file.filename, 'tenantId:', tenantId, 'categoryId:', categoryId || 'nenhuma');
+
+      const result = await CSVImportService.importContacts(req.file.path, tenantId, categoryId);
 
       if (result.success) {
         res.json({
@@ -81,11 +83,11 @@ export class CSVImportController {
   static async downloadTemplate(req: AuthenticatedRequest, res: Response) {
     try {
       // CSV template com cabeçalhos em português
-      const csvTemplate = `nome,telefone,email,observacoes,categoriaId
-João Silva,+5511999999999,joao@email.com,Cliente desde 2020,550e8400-e29b-41d4-a716-446655440000
-Maria Santos,+5511888888888,maria@email.com,Fornecedor de materiais,550e8400-e29b-41d4-a716-446655440001
-Pedro Oliveira,+5511777777777,pedro@email.com,,
-Ana Costa,+5511666666666,ana@email.com,Parceiro estratégico,550e8400-e29b-41d4-a716-446655440000`;
+      const csvTemplate = `nome,telefone,email,observacoes
+João Silva,+5511999999999,joao@email.com,Cliente desde 2020
+Maria Santos,+5511888888888,maria@email.com,Fornecedor de materiais
+Pedro Oliveira,+5511777777777,pedro@email.com,
+Ana Costa,+5511666666666,ana@email.com,Parceiro estratégico`;
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="template-contatos.csv"');
