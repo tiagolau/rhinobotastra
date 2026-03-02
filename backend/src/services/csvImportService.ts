@@ -52,15 +52,45 @@ export class CSVImportService {
     return { allowed: true, remaining };
   }
 
+  /**
+   * Detecta o separador do CSV lendo a primeira linha do arquivo
+   */
+  static detectSeparator(filePath: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
+      let firstLine = '';
+      stream.on('data', (chunk: string) => {
+        const newlineIdx = chunk.indexOf('\n');
+        if (newlineIdx !== -1) {
+          firstLine += chunk.slice(0, newlineIdx);
+          stream.destroy();
+        } else {
+          firstLine += chunk;
+        }
+      });
+      stream.on('close', () => {
+        const semicolons = (firstLine.match(/;/g) || []).length;
+        const commas = (firstLine.match(/,/g) || []).length;
+        const separator = semicolons > commas ? ';' : ',';
+        console.log(`🔎 CSVImportService - Separador detectado: "${separator}" (vírgulas: ${commas}, ponto-e-vírgulas: ${semicolons})`);
+        resolve(separator);
+      });
+      stream.on('error', reject);
+    });
+  }
+
   static async importContacts(filePath: string, tenantId: string, categoryId?: string): Promise<ImportResult> {
     const results: CSVRow[] = [];
     const errors: string[] = [];
     let successfulImports = 0;
     let failedImports = 0;
 
+    const separator = await CSVImportService.detectSeparator(filePath);
+
     return new Promise((resolve, reject) => {
       fs.createReadStream(filePath)
         .pipe(csvParser({
+          separator,
           mapHeaders: ({ header }: { header: string }) => header.toLowerCase().trim()
         }))
         .on('data', (data: CSVRow) => {
