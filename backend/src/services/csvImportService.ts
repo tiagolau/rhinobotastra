@@ -59,13 +59,14 @@ export class CSVImportService {
     return new Promise((resolve, reject) => {
       const stream = fs.createReadStream(filePath, { encoding: 'utf-8' });
       let firstLine = '';
-      stream.on('data', (chunk: string) => {
-        const newlineIdx = chunk.indexOf('\n');
+      stream.on('data', (chunk) => {
+        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        const newlineIdx = text.indexOf('\n');
         if (newlineIdx !== -1) {
-          firstLine += chunk.slice(0, newlineIdx);
+          firstLine += text.slice(0, newlineIdx);
           stream.destroy();
         } else {
-          firstLine += chunk;
+          firstLine += text;
         }
       });
       stream.on('close', () => {
