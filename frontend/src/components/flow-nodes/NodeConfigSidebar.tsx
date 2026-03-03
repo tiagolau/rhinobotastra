@@ -1526,6 +1526,66 @@ export function NodeConfigSidebar({ node, nodes, edges, connections, categories 
     </div>
   );
 
+  const renderWaitReplyConfig = () => (
+    <div className="space-y-4">
+      {/* Banner explicativo */}
+      <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+        <div className="flex items-start space-x-2">
+          <span className="text-lg">⏳</span>
+          <div className="text-sm text-amber-800">
+            <p className="font-medium mb-1">Aguardar Resposta</p>
+            <p>O fluxo será pausado neste ponto e aguardará <strong>qualquer mensagem</strong> do lead antes de continuar para o próximo bloco.</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Campo variável */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Salvar resposta em variável <span className="text-gray-400">(opcional)</span>
+        </label>
+        <input
+          type="text"
+          placeholder="Ex: resposta"
+          value={config.variableName || ''}
+          onChange={(e) => setConfig({ ...config, variableName: e.target.value.replace(/[^a-zA-Z0-9_]/g, '') })}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Use <code className="bg-gray-100 px-1 rounded">{'{variavel}'}</code> nos blocos seguintes para inserir a resposta do lead.
+        </p>
+      </div>
+
+      {/* Campo timeout */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Timeout <span className="text-gray-400">(opcional)</span>
+        </label>
+        <div className="flex space-x-2">
+          <input
+            type="number"
+            min="1"
+            placeholder="—"
+            value={config.timeoutValue || ''}
+            onChange={(e) => setConfig({ ...config, timeoutValue: parseInt(e.target.value) || '' })}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          />
+          <select
+            value={config.timeoutUnit || 'hours'}
+            onChange={(e) => setConfig({ ...config, timeoutUnit: e.target.value })}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          >
+            <option value="hours">Horas</option>
+            <option value="days">Dias</option>
+          </select>
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Tempo máximo para aguardar resposta. Se não responder, o fluxo será encerrado.
+        </p>
+      </div>
+    </div>
+  );
+
   // Função para parsear comando cURL
   const parseCurlCommand = (curl: string) => {
     try {
@@ -2489,6 +2549,7 @@ export function NodeConfigSidebar({ node, nodes, edges, connections, categories 
       action: '🚀',
       condition: '❓',
       delay: '⏱️',
+      waitreply: '⏳',
       httprest: '🌐',
       stop: '🛑',
       integration_perfex: '🔧',
@@ -2509,6 +2570,7 @@ export function NodeConfigSidebar({ node, nodes, edges, connections, categories 
       action: 'Ação',
       condition: 'Condição',
       delay: 'Delay',
+      waitreply: 'Aguardar Resposta',
       httprest: 'HTTP REST',
       stop: 'Stop',
       integration_perfex: 'Perfex CRM',
@@ -2537,6 +2599,8 @@ export function NodeConfigSidebar({ node, nodes, edges, connections, categories 
         return renderConditionConfig();
       case 'delay':
         return renderDelayConfig();
+      case 'waitreply':
+        return renderWaitReplyConfig();
       case 'httprest':
         return renderHttpRestConfig();
       case 'action':

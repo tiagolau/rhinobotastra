@@ -32,6 +32,7 @@ import { ActionNode } from '../components/flow-nodes/ActionNode';
 import { ConditionNode } from '../components/flow-nodes/ConditionNode';
 import { DelayNode } from '../components/flow-nodes/DelayNode';
 import { HttpRestNode } from '../components/flow-nodes/HttpRestNode';
+import { WaitReplyNode } from '../components/flow-nodes/WaitReplyNode';
 import { StopNode } from '../components/flow-nodes/StopNode';
 import { IntegrationPerfexNode } from '../components/flow-nodes/IntegrationPerfexNode';
 import { IntegrationChatwootNode } from '../components/flow-nodes/IntegrationChatwootNode';
@@ -51,6 +52,7 @@ const NODE_TYPES_CONFIG = {
   ai: { label: '🤖 IA', color: '#8b5cf6', description: 'IA' },
   condition: { label: '❓ Condição', color: '#ffd700', description: 'Condição' },
   delay: { label: '⏱️ Delay', color: '#ff7a7a', description: 'Espera' },
+  waitreply: { label: '⏳ Aguardar Resposta', color: '#f59e0b', description: 'Espera resposta' },
   httprest: { label: '🌐 HTTP REST', color: '#f59e0b', description: 'API' },
   stop: { label: '🛑 Stop', color: '#233e4f', description: 'Fim' },
 };
@@ -148,6 +150,7 @@ function FlowBuilderPageInner() {
       action: ActionNode,
       condition: ConditionNode,
       delay: DelayNode,
+      waitreply: WaitReplyNode,
       httprest: HttpRestNode,
       stop: StopNode,
       integration_perfex: IntegrationPerfexNode,

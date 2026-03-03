@@ -52,6 +52,21 @@ export const interactiveCampaignFlowEngine = {
 
       console.log(`📍 Current node type: ${currentNode.data?.nodeType}, label: ${currentNode.data?.label}`);
 
+      // Se o nó atual é waitreply, salvar resposta na variável configurada
+      if (currentNode.data?.nodeType === 'waitreply') {
+        const variableName = currentNode.data?.config?.variableName;
+        if (variableName) {
+          const currentVars = (session.variables as Record<string, any>) || {};
+          await interactiveCampaignSessionService.updateSession(session.id, {
+            variables: {
+              ...currentVars,
+              [variableName]: data.messageContent,
+            },
+          });
+          console.log(`📝 Saved reply to variable {${variableName}}: "${data.messageContent.substring(0, 50)}"`);
+        }
+      }
+
       // Determinar próximo nó baseado no tipo do nó atual
       const nextNode = await this.determineNextNode(graph, currentNode, data.messageContent, session);
 
@@ -77,7 +92,12 @@ export const interactiveCampaignFlowEngine = {
       // Se o próximo nó é um tipo que envia mensagem, enviar
       const messageNodeTypes = ['action', 'text', 'image', 'video', 'audio', 'document'];
       if (messageNodeTypes.includes(nextNode.data?.nodeType)) {
-        await this.sendNodeMessage(nextNode, session, data.contactPhone);
+        // Recarregar sessão para ter variáveis atualizadas (ex: após waitreply salvar variável)
+        const updatedSession = await interactiveCampaignSessionService.getActiveSessionByPhone(data.contactPhone) || session;
+        await this.sendNodeMessage(nextNode, updatedSession, data.contactPhone);
+
+        // Continuar auto-propagando o fluxo até o próximo ponto de parada
+        await this.continueFlowAfterMessage(graph, nextNode, updatedSession, data.contactPhone);
       }
 
       return { processed: true, nextNodeId: nextNode.id };
@@ -664,7 +684,7 @@ export const interactiveCampaignFlowEngine = {
       }
 
       // Se é condição ou stop, parar e aguardar
-      if (['condition', 'stop'].includes(nextNode.data?.nodeType)) {
+      if (['condition', 'stop', 'waitreply'].includes(nextNode.data?.nodeType)) {
         await interactiveCampaignSessionService.updateSession(session.id, {
           currentNodeId: nextNode.id,
         });

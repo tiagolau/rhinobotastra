@@ -450,7 +450,7 @@ export const interactiveCampaignDispatchService = {
         const nodeConfig = nextNode.data?.config;
 
         // Parar em nós que requerem interação do usuário ou finalização
-        if (['condition', 'stop'].includes(nodeType)) {
+        if (['condition', 'stop', 'waitreply'].includes(nodeType)) {
           console.log(`⏸️ Stopping at ${nodeType} node - requires user interaction`);
           // Atualizar currentNodeId da sessão para aguardar resposta do usuário
           if (sessionId) {
