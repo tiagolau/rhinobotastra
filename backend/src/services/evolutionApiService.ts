@@ -145,6 +145,39 @@ export class EvolutionApiService {
     }
   }
 
+  async setWebhook(instanceName: string, webhookUrl: string, customConfig?: { host: string; apiKey: string }): Promise<void> {
+    const config = customConfig || await this.getConfig();
+
+    if (!config.host || !config.apiKey) {
+      throw new Error('Configurações Evolution API não encontradas.');
+    }
+
+    const url = `${config.host}/webhook/set/${instanceName}`;
+    console.log(`🔗 Setting Evolution webhook for ${instanceName}: ${webhookUrl}`);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': config.apiKey,
+      },
+      body: JSON.stringify({
+        url: webhookUrl,
+        webhook_by_events: false,
+        webhook_base64: true,
+        events: ['MESSAGES_UPSERT'],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Error setting webhook for ${instanceName}: ${response.status} - ${errorText}`);
+      throw new Error(`Failed to set webhook: ${response.status} ${errorText}`);
+    }
+
+    console.log(`✅ Webhook configured for ${instanceName}`);
+  }
+
   async deleteInstance(instanceName: string): Promise<void> {
     await this.makeRequest(`/instance/delete/${instanceName}`, {
       method: 'DELETE'

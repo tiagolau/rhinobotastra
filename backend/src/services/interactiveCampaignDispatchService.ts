@@ -8,6 +8,7 @@ import { sendMessage, checkContactExists } from './wahaApiService';
 import { sendMessageViaEvolution, checkContactExistsEvolution, getEvolutionCredentialsFromSession } from './evolutionMessageService';
 import { sendMessageViaQuepasa, checkContactExistsQuepasa } from './quepasaMessageService';
 import { interactiveCampaignSessionService } from './interactiveCampaignSessionService';
+import { evolutionApiService } from './evolutionApiService';
 
 const prisma = new PrismaClient();
 
@@ -213,6 +214,28 @@ export const interactiveCampaignDispatchService = {
       }
 
       console.log(`📱 Active connections: ${connectionData.map(c => c.instanceName).join(', ')}`);
+
+      // Garantir que webhook está configurado para conexões Evolution
+      const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+      for (const conn of connectionData) {
+        if (conn.provider === 'EVOLUTION') {
+          try {
+            // Buscar webhookSecret da sessão
+            const whatsappSession = await prisma.whatsAppSession.findFirst({
+              where: { name: conn.instanceName },
+              select: { id: true, webhookSecret: true },
+            });
+
+            if (whatsappSession) {
+              const webhookUrl = `${baseUrl}/api/webhooks/incoming/${whatsappSession.id}/${whatsappSession.webhookSecret || 'default'}`;
+              const evolutionCreds = getEvolutionCredentialsFromSession({ config: (conn as any)._sessionConfig });
+              await evolutionApiService.setWebhook(conn.instanceName, webhookUrl, evolutionCreds || undefined);
+            }
+          } catch (webhookError: any) {
+            console.warn(`⚠️ Could not set webhook for ${conn.instanceName}: ${webhookError.message}`);
+          }
+        }
+      }
 
       // Enviar mensagens
       let connectionIndex = 0;

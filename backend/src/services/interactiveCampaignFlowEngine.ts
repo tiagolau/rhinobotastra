@@ -6,7 +6,7 @@
 import { PrismaClient } from '@prisma/client';
 import { interactiveCampaignSessionService } from './interactiveCampaignSessionService';
 import { sendMessage } from './wahaApiService';
-import { sendMessageViaEvolution } from './evolutionMessageService';
+import { sendMessageViaEvolution, getEvolutionCredentialsFromSession } from './evolutionMessageService';
 import { sendMessageViaQuepasa } from './quepasaMessageService';
 
 const prisma = new PrismaClient();
@@ -393,6 +393,7 @@ export const interactiveCampaignFlowEngine = {
               provider: true,
               meJid: true,
               quepasaToken: true,
+              config: true,
             },
           });
 
@@ -410,6 +411,7 @@ export const interactiveCampaignFlowEngine = {
               createdAt: new Date(),
               updatedAt: new Date(),
               quepasaToken: oldSession.quepasaToken,
+              _sessionConfig: oldSession.config,
             } as any;
             console.log(`✅ Using connection from WhatsAppSession: ${oldSession.name}`);
           }
@@ -494,9 +496,11 @@ export const interactiveCampaignFlowEngine = {
           await sendMessage(connection.instanceName, contactPhone, messagePayload);
           break;
 
-        case 'EVOLUTION':
-          await sendMessageViaEvolution(connection.instanceName, contactPhone, messagePayload);
+        case 'EVOLUTION': {
+          const evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
+          await sendMessageViaEvolution(connection.instanceName, contactPhone, messagePayload, evolutionCreds || undefined);
           break;
+        }
 
         case 'QUEPASA':
           // Buscar token QuePasa (pode vir da conexão convertida ou do banco)

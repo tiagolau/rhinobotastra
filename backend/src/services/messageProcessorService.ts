@@ -8,6 +8,7 @@
 
 import { interactiveCampaignService } from './interactiveCampaignService';
 import { flowEngineService } from './flowEngineService';
+import { interactiveCampaignFlowEngine } from './interactiveCampaignFlowEngine';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -30,6 +31,22 @@ export const messageProcessorService = {
   async processInboundMessage(message: InboundMessage) {
     try {
       console.log(`Processing inbound message from ${message.from} on connection ${message.connectionId}`);
+
+      // Primeiro: verificar se há sessão interativa aguardando resposta (waitreply)
+      const contactPhone = message.from.replace(/@.*$/, '').replace(/[^0-9]/g, '');
+      try {
+        const flowResult = await interactiveCampaignFlowEngine.processIncomingMessage({
+          contactPhone,
+          messageContent: message.content || '',
+        });
+
+        if (flowResult.processed) {
+          console.log(`✅ Interactive campaign flow processed for ${contactPhone}:`, flowResult);
+          return; // Mensagem já foi tratada pelo fluxo interativo
+        }
+      } catch (flowError: any) {
+        console.error(`⚠️ Error in interactive campaign flow engine:`, flowError.message);
+      }
 
       // Buscar TODAS as campanhas iniciadas
       const allCampaigns = await prisma.interactiveCampaign.findMany({
