@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import crypto from 'crypto';
+import { settingsService } from './settingsService';
 
 export interface CreateConnectionDto {
   provider: 'EVOLUTION' | 'WAHA' | 'QUEPASA';
@@ -19,7 +20,7 @@ export const connectionService = {
    */
   async createConnection(data: CreateConnectionDto) {
     const webhookSecret = crypto.randomBytes(32).toString('hex');
-    const baseUrl = process.env.APP_URL || 'http://localhost:3001';
+    const baseUrl = await settingsService.getAppBaseUrl();
 
     const connection = await prisma.connection.create({
       data: {

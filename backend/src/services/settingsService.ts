@@ -65,6 +65,14 @@ export class SettingsService {
     }
   }
 
+  /**
+   * Retorna a URL base do app, priorizando: settings.appUrl > env APP_URL > fallback
+   */
+  async getAppBaseUrl(): Promise<string> {
+    const settings = await this.getSettings();
+    return settings.appUrl || process.env.APP_URL || 'http://localhost:3001';
+  }
+
   async updateSettings(data: {
     wahaHost?: string;
     wahaApiKey?: string;
@@ -78,6 +86,7 @@ export class SettingsService {
     faviconUrl?: string | null;
     pageTitle?: string;
     iconUrl?: string | null;
+    appUrl?: string;
   }) {
     try {
       // Buscar configuração existente
@@ -99,7 +108,8 @@ export class SettingsService {
             companyName: data.companyName !== undefined ? data.companyName : settings.companyName,
             faviconUrl: data.faviconUrl !== undefined ? data.faviconUrl : settings.faviconUrl,
             pageTitle: data.pageTitle !== undefined ? data.pageTitle : settings.pageTitle,
-            iconUrl: data.iconUrl !== undefined ? data.iconUrl : settings.iconUrl
+            iconUrl: data.iconUrl !== undefined ? data.iconUrl : settings.iconUrl,
+            appUrl: data.appUrl !== undefined ? data.appUrl : settings.appUrl
           }
         });
       } else {
@@ -118,7 +128,8 @@ export class SettingsService {
             companyName: data.companyName || 'Astra Campaign',
             faviconUrl: data.faviconUrl || '/api/uploads/default_favicon.png',
             pageTitle: data.pageTitle || 'Sistema de Gestão de Contatos',
-            iconUrl: data.iconUrl || '/api/uploads/default_icon.png'
+            iconUrl: data.iconUrl || '/api/uploads/default_icon.png',
+            appUrl: data.appUrl || ''
           }
         });
       }

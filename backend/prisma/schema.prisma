@@ -114,6 +114,7 @@ model GlobalSettings {
   companyName     String?  @map("company_name")
   pageTitle       String?  @map("page_title")
   primaryColor    String?  @map("primary_color")
+  appUrl          String   @default("") @map("app_url")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 

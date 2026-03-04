@@ -36,10 +36,17 @@ router.post('/incoming/:sessionId/:webhookSecret', async (req: Request, res: Res
 
     // Verificar se campanha interativa está habilitada
     if (!session.interactiveCampaignEnabled) {
-      console.warn(`⚠️ Campanha interativa não habilitada para sessão: ${sessionId}`);
-      // Habilitar temporariamente para teste
-      console.log(`🔧 Habilitando campanha interativa temporariamente...`);
-      // return res.status(200).json({ message: 'Interactive campaign not enabled' });
+      console.warn(`[WEBHOOK-INCOMING] ⚠️ interactiveCampaignEnabled=false para sessão ${sessionId} (${session.name}). Ativando automaticamente...`);
+      // Ativar automaticamente ao receber primeiro webhook válido
+      try {
+        await prisma.whatsAppSession.update({
+          where: { id: sessionId },
+          data: { interactiveCampaignEnabled: true },
+        });
+        console.log(`[WEBHOOK-INCOMING] ✅ interactiveCampaignEnabled ativado automaticamente para sessão ${session.name}`);
+      } catch (updateError: any) {
+        console.error(`[WEBHOOK-INCOMING] ❌ Erro ao ativar interactiveCampaignEnabled: ${updateError.message}`);
+      }
     }
 
     console.log(`✅ Webhook válido para sessão: ${session.name} (${session.displayName})`);

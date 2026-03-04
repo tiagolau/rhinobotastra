@@ -9,6 +9,7 @@ import { sendMessageViaEvolution, checkContactExistsEvolution, getEvolutionCrede
 import { sendMessageViaQuepasa, checkContactExistsQuepasa } from './quepasaMessageService';
 import { interactiveCampaignSessionService } from './interactiveCampaignSessionService';
 import { evolutionApiService } from './evolutionApiService';
+import { settingsService } from './settingsService';
 
 const prisma = new PrismaClient();
 
@@ -216,7 +217,8 @@ export const interactiveCampaignDispatchService = {
       console.log(`📱 Active connections: ${connectionData.map(c => c.instanceName).join(', ')}`);
 
       // Garantir que webhook está configurado para conexões Evolution
-      const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+      const baseUrl = await settingsService.getAppBaseUrl();
+      console.log(`🔗 Using base URL for webhooks: ${baseUrl}`);
       for (const conn of connectionData) {
         if (conn.provider === 'EVOLUTION') {
           try {
@@ -230,6 +232,14 @@ export const interactiveCampaignDispatchService = {
               const webhookUrl = `${baseUrl}/api/webhooks/incoming/${whatsappSession.id}/${whatsappSession.webhookSecret || 'default'}`;
               const evolutionCreds = getEvolutionCredentialsFromSession({ config: (conn as any)._sessionConfig });
               await evolutionApiService.setWebhook(conn.instanceName, webhookUrl, evolutionCreds || undefined);
+              console.log(`✅ Webhook configurado para ${conn.instanceName}: ${webhookUrl}`);
+
+              // Ativar flag interactiveCampaignEnabled na sessão
+              await prisma.whatsAppSession.update({
+                where: { id: whatsappSession.id },
+                data: { interactiveCampaignEnabled: true },
+              });
+              console.log(`✅ interactiveCampaignEnabled ativado para sessão ${conn.instanceName}`);
             }
           } catch (webhookError: any) {
             console.warn(`⚠️ Could not set webhook for ${conn.instanceName}: ${webhookError.message}`);

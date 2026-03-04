@@ -8,6 +8,7 @@ import { interactiveCampaignSessionService } from './interactiveCampaignSessionS
 import { sendMessage } from './wahaApiService';
 import { sendMessageViaEvolution, getEvolutionCredentialsFromSession } from './evolutionMessageService';
 import { sendMessageViaQuepasa } from './quepasaMessageService';
+import { settingsService } from './settingsService';
 
 const prisma = new PrismaClient();
 
@@ -363,11 +364,15 @@ export const interactiveCampaignFlowEngine = {
     });
 
     if (!campaign) {
-      console.error(`❌ Campaign ${session.campaignId} not found`);
+      console.error(`[FLOW-ENGINE] ❌ Campaign ${session.campaignId} not found`);
       return;
     }
 
     let connection = campaign.connection;
+
+    if (connection) {
+      console.log(`[FLOW-ENGINE] ✅ Using campaign.connection: ${connection.instanceName} (${connection.provider})`);
+    }
 
     // Se não tem connection (connectionId null), buscar do graph do trigger
     if (!connection) {
@@ -376,7 +381,7 @@ export const interactiveCampaignFlowEngine = {
 
       if (triggerNode?.data?.config?.connections?.length > 0) {
         const connectionId = triggerNode.data.config.connections[0];
-        console.log(`🔍 Getting connection from trigger: ${connectionId}`);
+        console.log(`[FLOW-ENGINE] 🔍 connectionId null na campanha, buscando do trigger: ${connectionId}`);
 
         // Buscar tanto em Connection quanto WhatsAppSession
         connection = await prisma.connection.findUnique({
@@ -413,16 +418,20 @@ export const interactiveCampaignFlowEngine = {
               quepasaToken: oldSession.quepasaToken,
               _sessionConfig: oldSession.config,
             } as any;
-            console.log(`✅ Using connection from WhatsAppSession: ${oldSession.name}`);
+            console.log(`[FLOW-ENGINE] ✅ Using connection from WhatsAppSession: ${oldSession.name} (${oldSession.provider})`);
+          } else {
+            console.error(`[FLOW-ENGINE] ❌ Connection ${connectionId} not found in Connection nor WhatsAppSession tables`);
           }
         } else {
-          console.log(`✅ Using connection from Connection table: ${connection.instanceName}`);
+          console.log(`[FLOW-ENGINE] ✅ Using connection from Connection table: ${connection.instanceName} (${connection.provider})`);
         }
+      } else {
+        console.error(`[FLOW-ENGINE] ❌ No connections configured in trigger node`);
       }
     }
 
     if (!connection) {
-      console.error(`❌ No connection found for campaign ${session.campaignId}`);
+      console.error(`[FLOW-ENGINE] ❌ No connection found for campaign ${session.campaignId}. connectionId: ${campaign.connectionId}`);
       return;
     }
     const variables = (session.variables as Record<string, any>) || {};
@@ -497,7 +506,19 @@ export const interactiveCampaignFlowEngine = {
           break;
 
         case 'EVOLUTION': {
-          const evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
+          let evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
+          if (!evolutionCreds) {
+            // Buscar credenciais globais do settings
+            const evoConfig = await settingsService.getEvolutionConfig();
+            if (evoConfig.host && evoConfig.apiKey) {
+              evolutionCreds = { url: evoConfig.host, apiKey: evoConfig.apiKey };
+              console.log(`[FLOW-ENGINE] 🔑 Using global Evolution credentials for ${connection.instanceName}`);
+            } else {
+              console.log(`[FLOW-ENGINE] 🔑 Using default Evolution credentials for ${connection.instanceName}`);
+            }
+          } else {
+            console.log(`[FLOW-ENGINE] 🔑 Using session-specific Evolution credentials for ${connection.instanceName}`);
+          }
           await sendMessageViaEvolution(connection.instanceName, contactPhone, messagePayload, evolutionCreds || undefined);
           break;
         }

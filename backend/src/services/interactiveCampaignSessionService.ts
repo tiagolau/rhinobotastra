@@ -108,10 +108,11 @@ export const interactiveCampaignSessionService = {
 
     console.log(`[SESSION-LOOKUP] 🔍 Buscando sessão ativa - input: ${contactPhone}, variações: [${phoneVariations.join(', ')}]`);
 
-    const session = await prisma.interactiveCampaignSession.findFirst({
+    // Buscar todas as sessões ativas que correspondem ao telefone (match exato)
+    const sessions = await prisma.interactiveCampaignSession.findMany({
       where: {
         OR: phoneVariations.map(phone => ({
-          contactPhone: { contains: phone },
+          contactPhone: phone,
         })),
         status: 'ACTIVE',
       },
@@ -124,9 +125,7 @@ export const interactiveCampaignSessionService = {
       },
     });
 
-    if (session) {
-      console.log(`[SESSION-LOOKUP] ✅ Sessão encontrada - id: ${session.id}, campanha: "${session.campaign.name}", nó atual: ${session.currentNodeId}, telefone armazenado: ${session.contactPhone}`);
-    } else {
+    if (sessions.length === 0) {
       // Log extra para debug: listar sessões ativas existentes
       const activeSessions = await prisma.interactiveCampaignSession.findMany({
         where: { status: 'ACTIVE' },
@@ -134,8 +133,25 @@ export const interactiveCampaignSessionService = {
         take: 10,
       });
       console.log(`[SESSION-LOOKUP] ❌ Nenhuma sessão encontrada para [${phoneVariations.join(', ')}]. Sessões ativas no sistema: ${activeSessions.length > 0 ? activeSessions.map(s => `${s.contactPhone} (nó: ${s.currentNodeId})`).join(', ') : 'NENHUMA'}`);
+      return null;
     }
 
+    // Se há múltiplas sessões, priorizar a que está no nó waitreply (mais relevante para processar resposta)
+    let session = sessions[0];
+    if (sessions.length > 1) {
+      console.log(`[SESSION-LOOKUP] ⚠️ ${sessions.length} sessões ativas encontradas para [${phoneVariations.join(', ')}]`);
+      const waitReplySession = sessions.find(s => {
+        const graph = s.campaign.graph as any;
+        const currentNode = graph?.nodes?.find((n: any) => n.id === s.currentNodeId);
+        return currentNode?.data?.nodeType === 'waitreply';
+      });
+      if (waitReplySession) {
+        session = waitReplySession;
+        console.log(`[SESSION-LOOKUP] ✅ Priorizando sessão em waitreply: ${session.id}`);
+      }
+    }
+
+    console.log(`[SESSION-LOOKUP] ✅ Sessão encontrada - id: ${session.id}, campanha: "${session.campaign.name}", nó atual: ${session.currentNodeId}, telefone armazenado: ${session.contactPhone}`);
     return session;
   },
 

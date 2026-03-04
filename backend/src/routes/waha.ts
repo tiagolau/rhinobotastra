@@ -189,7 +189,7 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
                             });
 
                             if (fullSession?.interactiveCampaignEnabled && fullSession?.webhookSecret) {
-                              const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+                              const baseUrl = await settingsService.getAppBaseUrl();
                               const webhookUrlForQuepasa = `${baseUrl}/api/webhooks/incoming/${fullSession.id}/${fullSession.webhookSecret}`;
                               console.log(`🔗 Configurando webhook QuePasa para campanhas interativas: ${webhookUrlForQuepasa}`);
 
@@ -272,7 +272,7 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
                 });
 
                 if (fullSession?.interactiveCampaignEnabled && fullSession?.webhookSecret) {
-                  const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+                  const baseUrl = await settingsService.getAppBaseUrl();
                   const webhookUrlForQuepasa = `${baseUrl}/api/webhooks/incoming/${fullSession.id}/${fullSession.webhookSecret}`;
                   console.log(`🔗 Configurando webhook QuePasa para campanhas interativas (status sync): ${webhookUrlForQuepasa}`);
 
@@ -547,7 +547,7 @@ router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: Authe
       });
 
       if (interactiveCampaignEnabled && webhookSecret) {
-        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        const baseUrl = await settingsService.getAppBaseUrl();
         webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
         console.log(`🔗 Webhook URL para Evolution: ${webhookUrl}`);
       }
@@ -601,7 +601,7 @@ router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: Authe
 
       // Se campanha interativa habilitada, gerar webhook URL
       if (interactiveCampaignEnabled && webhookSecret) {
-        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        const baseUrl = await settingsService.getAppBaseUrl();
         webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
         console.log(`🔗 Webhook URL para QuePasa: ${webhookUrl}`);
 
@@ -627,7 +627,7 @@ router.post('/sessions', authMiddleware, checkConnectionQuota, async (req: Authe
       });
 
       if (interactiveCampaignEnabled && webhookSecret) {
-        const baseUrl = process.env.APP_URL || 'https://work.trecofantastico.com.br';
+        const baseUrl = await settingsService.getAppBaseUrl();
         webhookUrl = `${baseUrl}/api/webhooks/incoming/${tempSession.id}/${webhookSecret}`;
         console.log(`🔗 Webhook URL para WAHA: ${webhookUrl}`);
       }
