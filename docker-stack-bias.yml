@@ -1,0 +1,167 @@
+version: "3.7"
+services:
+
+## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
+
+  rhinobot_backend:
+    image: ghcr.io/tiagolau/rhinobot-backend:latest
+
+    volumes:
+      - rhinobot_contacts:/app/data
+      - rhinobot_uploads:/app/uploads
+      - rhinobot_backup:/app/backups
+
+    networks:
+      - bias
+
+    environment:
+    ## 🗄️ Configuração do Postgres
+      - DATABASE_URL=postgresql://postgres:9133c672394a50180631d263739f7a35@rhinobot_postgres:5432/rhinobot_campaign
+
+    ## 🔁 Configuração do Redis
+      - REDIS_URL=redis://rhinobot_redis:6379
+      - REDIS_PREFIX=rhinobot_app
+
+    ## 🌐 Configuração do Servidor
+      - PORT=3001
+      - NODE_ENV=production
+
+    ## 🔐 Configuração de Autenticação (JWT)
+      - JWT_SECRET=d4e8f2a1b7c9035e6f1a8d4b2c7e9f3a5d1b8e4c
+      - JWT_EXPIRES_IN=24h
+
+    ## 🏢 Configuração da Aplicação
+      - DEFAULT_COMPANY_NAME=Rhinobot
+      - DEFAULT_PAGE_TITLE=Rhinobot - Gestão de Campanhas WhatsApp
+
+    ## 🔗 URL pública do backend (usada para webhooks das campanhas interativas)
+      - APP_URL=https://rhinobot.biascentroeducacional.com.br
+
+    ## 🔓 Configuração de CORS
+      - ALLOWED_ORIGINS=https://rhinobot.biascentroeducacional.com.br,http://rhinobot.biascentroeducacional.com.br,http://rhinobot_frontend,http://rhinobot_frontend:80
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.rhinobot-backend.rule=Host(`rhinobot.biascentroeducacional.com.br`) && PathPrefix(`/api`)
+        - traefik.http.services.rhinobot-backend.loadbalancer.server.port=3001
+        - traefik.http.routers.rhinobot-backend.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.rhinobot-backend.entrypoints=websecure
+        - traefik.http.routers.rhinobot-backend.tls=true
+        - traefik.docker.network=bias
+
+## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
+
+  rhinobot_frontend:
+    image: ghcr.io/tiagolau/rhinobot-frontend:latest
+
+    networks:
+      - bias
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.rhinobot-frontend.rule=Host(`rhinobot.biascentroeducacional.com.br`)
+        - traefik.http.services.rhinobot-frontend.loadbalancer.server.port=80
+        - traefik.http.routers.rhinobot-frontend.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.rhinobot-frontend.entrypoints=websecure
+        - traefik.http.routers.rhinobot-frontend.tls=true
+        - traefik.docker.network=bias
+
+## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
+
+  rhinobot_redis:
+    image: redis:latest
+    command: [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--port",
+        "6379"
+      ]
+
+    volumes:
+      - rhinobot_redis:/data
+
+    networks:
+      - bias
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+
+## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
+
+  rhinobot_postgres:
+    image: postgres:16
+
+    volumes:
+      - rhinobot_postgres:/var/lib/postgresql/data
+
+    networks:
+      - bias
+
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=9133c672394a50180631d263739f7a35
+      - POSTGRES_DB=rhinobot_campaign
+
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
+
+volumes:
+  rhinobot_contacts:
+    external: true
+    name: rhinobot_contacts
+  rhinobot_uploads:
+    external: true
+    name: rhinobot_uploads
+  rhinobot_backup:
+    external: true
+    name: rhinobot_backup
+  rhinobot_redis:
+    external: true
+    name: rhinobot_redis
+  rhinobot_postgres:
+    external: true
+    name: rhinobot_postgres
+
+networks:
+  bias:
+    external: true
+    name: bias
