@@ -172,23 +172,63 @@ export const interactiveCampaignSessionService = {
   },
 
   /**
-   * Finaliza sessão
+   * Finaliza sessão e verifica se a campanha pode ser marcada como COMPLETED
    */
   async completeSession(sessionId: string) {
-    return this.updateSession(sessionId, {
+    const updatedSession = await this.updateSession(sessionId, {
       status: 'COMPLETED',
       lastMessageAt: new Date(),
     });
+
+    // Verificar se todas as sessões da campanha foram finalizadas
+    await this.checkAndCompleteCampaign(updatedSession.campaignId);
+
+    return updatedSession;
   },
 
   /**
-   * Marca sessão como falha
+   * Verifica se todas as sessões de uma campanha terminaram e atualiza o status da campanha
+   */
+  async checkAndCompleteCampaign(campaignId: string) {
+    const activeSessions = await prisma.interactiveCampaignSession.count({
+      where: {
+        campaignId,
+        status: 'ACTIVE',
+      },
+    });
+
+    if (activeSessions === 0) {
+      const campaign = await prisma.interactiveCampaign.findUnique({
+        where: { id: campaignId },
+        select: { status: true },
+      });
+
+      // Só marcar como COMPLETED se a campanha está STARTED (dispatch já ocorreu)
+      if (campaign && campaign.status === 'STARTED') {
+        await prisma.interactiveCampaign.update({
+          where: { id: campaignId },
+          data: { status: 'COMPLETED' },
+        });
+        console.log(`✅ All sessions completed - Campaign ${campaignId} status updated to COMPLETED`);
+      }
+    } else {
+      console.log(`⏳ Campaign ${campaignId} still has ${activeSessions} active sessions`);
+    }
+  },
+
+  /**
+   * Marca sessão como falha e verifica se a campanha pode ser marcada como COMPLETED
    */
   async failSession(sessionId: string) {
-    return this.updateSession(sessionId, {
+    const updatedSession = await this.updateSession(sessionId, {
       status: 'FAILED',
       lastMessageAt: new Date(),
     });
+
+    // Verificar se todas as sessões da campanha foram finalizadas
+    await this.checkAndCompleteCampaign(updatedSession.campaignId);
+
+    return updatedSession;
   },
 
   /**

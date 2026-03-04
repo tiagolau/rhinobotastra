@@ -5,7 +5,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { sendMessage, checkContactExists } from './wahaApiService';
-import { sendMessageViaEvolution, checkContactExistsEvolution } from './evolutionMessageService';
+import { sendMessageViaEvolution, checkContactExistsEvolution, getEvolutionCredentialsFromSession } from './evolutionMessageService';
 import { sendMessageViaQuepasa, checkContactExistsQuepasa } from './quepasaMessageService';
 import { interactiveCampaignSessionService } from './interactiveCampaignSessionService';
 
@@ -185,6 +185,7 @@ export const interactiveCampaignDispatchService = {
           provider: true,
           meJid: true,
           quepasaToken: true,
+          config: true,
         },
       });
 
@@ -201,6 +202,7 @@ export const interactiveCampaignDispatchService = {
         createdAt: new Date(),
         updatedAt: new Date(),
         quepasaToken: session.quepasaToken, // Manter token para uso posterior
+        _sessionConfig: session.config, // Config da sessão importada (Evolution credentials)
       }));
 
       // Mesclar conexões novas e antigas
@@ -246,7 +248,8 @@ export const interactiveCampaignDispatchService = {
 
           // Verificar existência do contato
           if (connection.provider === 'EVOLUTION') {
-            contactCheck = await checkContactExistsEvolution(connection.instanceName, contact.telefone);
+            const evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
+            contactCheck = await checkContactExistsEvolution(connection.instanceName, contact.telefone, evolutionCreds || undefined);
           } else if (connection.provider === 'QUEPASA') {
             contactCheck = await checkContactExistsQuepasa(connection.instanceName, contact.telefone, sessionToken);
           } else {
@@ -317,13 +320,16 @@ export const interactiveCampaignDispatchService = {
               );
               break;
 
-            case 'EVOLUTION':
+            case 'EVOLUTION': {
+              const evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
               await sendMessageViaEvolution(
                 connection.instanceName,
                 validatedPhone,
-                messagePayload
+                messagePayload,
+                evolutionCreds || undefined
               );
               break;
+            }
 
             case 'QUEPASA':
               await sendMessageViaQuepasa(
@@ -401,13 +407,25 @@ export const interactiveCampaignDispatchService = {
 
       console.log(`✅ Dispatch completed - Success: ${successCount}, Errors: ${errorCount}`);
 
-      // Atualizar status da campanha para COMPLETED
-      await prisma.interactiveCampaign.update({
-        where: { id: campaignId },
-        data: { status: 'COMPLETED' },
+      // Verificar se há sessões ativas aguardando resposta (waitreply, condition, etc.)
+      const activeSessions = await prisma.interactiveCampaignSession.count({
+        where: {
+          campaignId: campaignId,
+          status: 'ACTIVE',
+        },
       });
 
-      console.log(`✅ Campaign ${campaignId} status updated to COMPLETED`);
+      if (activeSessions > 0) {
+        // Manter campanha como STARTED enquanto há sessões aguardando resposta
+        console.log(`⏳ Campaign ${campaignId} has ${activeSessions} active sessions waiting for replies - keeping status STARTED`);
+      } else {
+        // Apenas marcar como COMPLETED se não há sessões ativas
+        await prisma.interactiveCampaign.update({
+          where: { id: campaignId },
+          data: { status: 'COMPLETED' },
+        });
+        console.log(`✅ Campaign ${campaignId} status updated to COMPLETED`);
+      }
 
       return {
         success: true,
@@ -595,13 +613,16 @@ export const interactiveCampaignDispatchService = {
               );
               break;
 
-            case 'EVOLUTION':
+            case 'EVOLUTION': {
+              const evolutionCreds = getEvolutionCredentialsFromSession({ config: (connection as any)._sessionConfig });
               await sendMessageViaEvolution(
                 connection.instanceName,
                 validatedPhone,
-                messagePayload
+                messagePayload,
+                evolutionCreds || undefined
               );
               break;
+            }
 
             case 'QUEPASA':
               await sendMessageViaQuepasa(
