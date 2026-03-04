@@ -16,7 +16,7 @@ services:
 
     environment:
     ## 🗄️ Configuração do Postgres
-      - DATABASE_URL=postgresql://postgres:9133c672394a50180631d263739f7a35@rhinobot_postgres:5432/rhinobot_campaign
+      - DATABASE_URL=postgresql://postgres:9133c672394a50180631d263739f7a35@postgres:5432/rhinobot_campaign
 
     ## 🔁 Configuração do Redis
       - REDIS_URL=redis://rhinobot_redis:6379
@@ -117,33 +117,6 @@ services:
 
 ## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
 
-  rhinobot_postgres:
-    image: postgres:16
-
-    volumes:
-      - rhinobot_postgres:/var/lib/postgresql/data
-
-    networks:
-      - bias
-
-    environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=9133c672394a50180631d263739f7a35
-      - POSTGRES_DB=rhinobot_campaign
-
-    deploy:
-      mode: replicated
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-      resources:
-        limits:
-          cpus: "1"
-          memory: 512M
-
-## --------------------------- RHINOBOT CAMPAIGN --------------------------- ##
-
 volumes:
   rhinobot_contacts:
     external: true
@@ -157,9 +130,6 @@ volumes:
   rhinobot_redis:
     external: true
     name: rhinobot_redis
-  rhinobot_postgres:
-    external: true
-    name: rhinobot_postgres
 
 networks:
   bias:
