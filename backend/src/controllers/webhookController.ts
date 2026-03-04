@@ -13,15 +13,19 @@ export const webhookController = {
       const signature = req.headers['x-signature'] as string;
       const rawBody = JSON.stringify(req.body);
 
+      console.log(`[WEBHOOK-CONNECTION] 📨 Recebido na rota /wa/${connectionId}/callback - event: ${req.body?.event || 'unknown'}`);
+
       // Buscar conexão
       const connection = await connectionService.getConnection(connectionId);
 
       if (!connection) {
+        console.warn(`[WEBHOOK-CONNECTION] ❌ Conexão não encontrada: ${connectionId}`);
         return res.status(404).json({ error: 'Conexão não encontrada' });
       }
 
       // Validar HMAC signature
       if (!signature) {
+        console.warn(`[WEBHOOK-CONNECTION] ❌ Assinatura ausente para ${connectionId}`);
         return res.status(401).json({ error: 'Assinatura ausente' });
       }
 
@@ -32,7 +36,7 @@ export const webhookController = {
       );
 
       if (!isValid) {
-        console.warn(`Invalid HMAC signature for connection ${connectionId}`);
+        console.warn(`[WEBHOOK-CONNECTION] ❌ Assinatura HMAC inválida para ${connectionId}`);
         return res.status(401).json({ error: 'Assinatura inválida' });
       }
 
@@ -44,6 +48,8 @@ export const webhookController = {
         return res.status(200).json({ ok: true });
       }
 
+      console.log(`[WEBHOOK-CONNECTION] 📝 Mensagem - from: ${messageData.from}, direction: ${messageData.direction}, content: "${(messageData.content || '').substring(0, 50)}"`);
+
       // Salvar mensagem (com idempotência)
       const { message, isNew } = await messageService.saveMessage(
         connectionId,
@@ -52,7 +58,7 @@ export const webhookController = {
 
       // Se mensagem nova E inbound, processar fluxos
       if (isNew && messageData.direction === 'INBOUND') {
-        console.log(`Nova mensagem INBOUND: ${message.id}`);
+        console.log(`[WEBHOOK-CONNECTION] 🔄 Nova mensagem INBOUND: ${message.id} - encaminhando para messageProcessorService`);
 
         // Processar assincronamente (não bloquear resposta do webhook)
         const { messageProcessorService } = await import('../services/messageProcessorService');

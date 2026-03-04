@@ -23,17 +23,17 @@ export const interactiveCampaignFlowEngine = {
    */
   async processIncomingMessage(data: ProcessMessageData) {
     try {
-      console.log(`📨 Processing incoming message from ${data.contactPhone}`);
+      console.log(`[FLOW-ENGINE] 📨 processIncomingMessage - telefone: ${data.contactPhone}, conteúdo: "${(data.messageContent || '').substring(0, 50)}"`);
 
       // Buscar sessão ativa do contato
       const session = await interactiveCampaignSessionService.getActiveSessionByPhone(data.contactPhone);
 
       if (!session) {
-        console.log(`⚠️ No active session found for ${data.contactPhone}`);
+        console.log(`[FLOW-ENGINE] ⚠️ Nenhuma sessão ativa para ${data.contactPhone}`);
         return { processed: false, reason: 'NO_ACTIVE_SESSION' };
       }
 
-      console.log(`✅ Found active session for campaign "${session.campaign.name}" at node ${session.currentNodeId}`);
+      console.log(`[FLOW-ENGINE] ✅ Sessão encontrada - campanha: "${session.campaign.name}", nó atual: ${session.currentNodeId}, status campanha: ${session.campaign.status}`);
 
       // Atualizar sessão com última resposta
       await interactiveCampaignSessionService.updateSession(session.id, {

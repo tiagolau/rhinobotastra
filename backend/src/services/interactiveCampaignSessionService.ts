@@ -106,9 +106,9 @@ export const interactiveCampaignSessionService = {
       }
     }
 
-    console.log(`🔍 Session lookup - phone variations: ${phoneVariations.join(', ')}`);
+    console.log(`[SESSION-LOOKUP] 🔍 Buscando sessão ativa - input: ${contactPhone}, variações: [${phoneVariations.join(', ')}]`);
 
-    return prisma.interactiveCampaignSession.findFirst({
+    const session = await prisma.interactiveCampaignSession.findFirst({
       where: {
         OR: phoneVariations.map(phone => ({
           contactPhone: { contains: phone },
@@ -120,9 +120,23 @@ export const interactiveCampaignSessionService = {
         contact: true,
       },
       orderBy: {
-        updatedAt: 'desc', // Pega a mais recente
+        updatedAt: 'desc',
       },
     });
+
+    if (session) {
+      console.log(`[SESSION-LOOKUP] ✅ Sessão encontrada - id: ${session.id}, campanha: "${session.campaign.name}", nó atual: ${session.currentNodeId}, telefone armazenado: ${session.contactPhone}`);
+    } else {
+      // Log extra para debug: listar sessões ativas existentes
+      const activeSessions = await prisma.interactiveCampaignSession.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, contactPhone: true, currentNodeId: true, campaignId: true },
+        take: 10,
+      });
+      console.log(`[SESSION-LOOKUP] ❌ Nenhuma sessão encontrada para [${phoneVariations.join(', ')}]. Sessões ativas no sistema: ${activeSessions.length > 0 ? activeSessions.map(s => `${s.contactPhone} (nó: ${s.currentNodeId})`).join(', ') : 'NENHUMA'}`);
+    }
+
+    return session;
   },
 
   /**

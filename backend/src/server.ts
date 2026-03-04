@@ -142,6 +142,12 @@ app.get('/api/health', (req, res) => {
 // Servir uploads estaticamente (público)
 app.use('/api/uploads', express.static('/app/uploads'));
 
+// Log de TODOS os webhooks recebidos (debug)
+app.use('/api/webhooks', (req, res, next) => {
+  console.log(`[WEBHOOK-ROUTER] ➡️ ${req.method} ${req.originalUrl} (IP: ${req.ip})`);
+  next();
+});
+
 // Rotas públicas de webhooks (recebem de provedores externos)
 app.use('/api/webhooks', webhookRoutes);
 app.use('/api/webhooks', incomingWebhookRoutes);

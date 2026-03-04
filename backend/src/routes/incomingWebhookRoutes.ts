@@ -15,8 +15,7 @@ router.post('/incoming/:sessionId/:webhookSecret', async (req: Request, res: Res
     const { sessionId, webhookSecret } = req.params;
     const payload = req.body;
 
-    console.log(`📨 Webhook recebido - SessionId: ${sessionId}`);
-    console.log(`📦 Payload:`, JSON.stringify(payload, null, 2));
+    console.log(`[WEBHOOK-INCOMING] 📨 Recebido na rota /incoming - SessionId: ${sessionId}, event: ${payload?.event || 'unknown'}`);
 
     // Buscar sessão no banco de dados
     const session = await prisma.whatsAppSession.findUnique({
@@ -64,16 +63,15 @@ router.post('/incoming/:sessionId/:webhookSecret', async (req: Request, res: Res
     }
 
     if (!messageData) {
-      console.warn(`⚠️ Não foi possível extrair dados da mensagem`);
+      console.warn(`[WEBHOOK-INCOMING] ⚠️ Payload não reconhecido - event: ${payload?.event}, keys: ${Object.keys(payload || {}).join(',')}`);
       return res.status(200).json({ message: 'Message ignored' });
     }
 
-    console.log(`📝 Mensagem extraída:`, messageData);
+    console.log(`[WEBHOOK-INCOMING] 📝 Mensagem extraída - from: ${messageData.fromNumber}, fromMe: ${messageData.isFromMe}, content: "${(messageData.content || '').substring(0, 50)}"`);
 
-    // Processar mensagem para campanhas interativas
     // Ignorar mensagens enviadas pelo bot (isFromMe = true)
     if (messageData.isFromMe) {
-      console.log(`⏭️ Ignorando mensagem enviada pelo bot`);
+      console.log(`[WEBHOOK-INCOMING] ⏭️ Ignorando mensagem do bot (fromMe=true)`);
       return res.status(200).json({
         success: true,
         message: 'Message from bot ignored',
@@ -81,6 +79,7 @@ router.post('/incoming/:sessionId/:webhookSecret', async (req: Request, res: Res
     }
 
     // Processar mensagem no flow engine
+    console.log(`[WEBHOOK-INCOMING] 🔄 Chamando flow engine para ${messageData.fromNumber}...`);
     try {
       const result = await interactiveCampaignFlowEngine.processIncomingMessage({
         contactPhone: messageData.fromNumber,
@@ -88,7 +87,7 @@ router.post('/incoming/:sessionId/:webhookSecret', async (req: Request, res: Res
         sessionId: session.id,
       });
 
-      console.log(`✅ Flow engine result:`, result);
+      console.log(`[WEBHOOK-INCOMING] ✅ Flow engine result:`, JSON.stringify(result));
 
       res.status(200).json({
         success: true,

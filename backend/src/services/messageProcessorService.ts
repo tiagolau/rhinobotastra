@@ -30,22 +30,29 @@ export const messageProcessorService = {
    */
   async processInboundMessage(message: InboundMessage) {
     try {
-      console.log(`Processing inbound message from ${message.from} on connection ${message.connectionId}`);
+      console.log(`[MSG-PROCESSOR] 📨 Processando mensagem de ${message.from} (connection: ${message.connectionId})`);
 
       // Primeiro: verificar se há sessão interativa aguardando resposta (waitreply)
       const contactPhone = message.from.replace(/@.*$/, '').replace(/[^0-9]/g, '');
+      console.log(`[MSG-PROCESSOR] 📱 Telefone normalizado: ${message.from} -> ${contactPhone}`);
+
       try {
+        console.log(`[MSG-PROCESSOR] 🔄 Verificando sessão waitreply para ${contactPhone}...`);
         const flowResult = await interactiveCampaignFlowEngine.processIncomingMessage({
           contactPhone,
           messageContent: message.content || '',
         });
 
+        console.log(`[MSG-PROCESSOR] 📊 Flow engine result:`, JSON.stringify(flowResult));
+
         if (flowResult.processed) {
-          console.log(`✅ Interactive campaign flow processed for ${contactPhone}:`, flowResult);
-          return; // Mensagem já foi tratada pelo fluxo interativo
+          console.log(`[MSG-PROCESSOR] ✅ Mensagem tratada pelo fluxo interativo para ${contactPhone}`);
+          return;
         }
+
+        console.log(`[MSG-PROCESSOR] ⏭️ Nenhuma sessão waitreply ativa para ${contactPhone}, continuando processamento normal`);
       } catch (flowError: any) {
-        console.error(`⚠️ Error in interactive campaign flow engine:`, flowError.message);
+        console.error(`[MSG-PROCESSOR] ⚠️ Erro no flow engine:`, flowError.message);
       }
 
       // Buscar TODAS as campanhas iniciadas
