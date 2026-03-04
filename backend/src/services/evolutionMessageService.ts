@@ -1,5 +1,22 @@
 import { settingsService } from './settingsService';
 
+/**
+ * Extrai credenciais Evolution de uma sessão importada (campo config JSON).
+ * Retorna { host, apiKey } se a sessão foi importada, ou null caso contrário.
+ */
+export function getEvolutionCredentialsFromSession(session: any): { host: string; apiKey: string } | null {
+  try {
+    const configStr = typeof session.config === 'string' ? session.config : null;
+    if (configStr) {
+      const config = JSON.parse(configStr);
+      if (config.evolutionUrl && config.evolutionApiKey) {
+        return { host: config.evolutionUrl, apiKey: config.evolutionApiKey };
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
 function normalizeBrazilianPhone(phone: string | number): string {
   if (!phone || phone === null || phone === undefined) {
     console.log(`📱 Número brasileiro Evolution inválido: ${phone}`);
@@ -21,9 +38,9 @@ interface EvolutionMessage {
   caption?: string;
 }
 
-export async function sendMessageViaEvolution(instanceName: string, phone: string | number, message: EvolutionMessage) {
+export async function sendMessageViaEvolution(instanceName: string, phone: string | number, message: EvolutionMessage, customConfig?: { host: string; apiKey: string }) {
   try {
-    const config = await settingsService.getEvolutionConfig();
+    const config = customConfig || await settingsService.getEvolutionConfig();
 
     if (!config.host || !config.apiKey) {
       throw new Error('Configurações Evolution API não encontradas. Configure nas configurações do sistema.');
@@ -111,9 +128,9 @@ export async function sendMessageViaEvolution(instanceName: string, phone: strin
   }
 }
 
-export async function checkContactExistsEvolution(instanceName: string, phone: string | number): Promise<{exists: boolean, validPhone?: string}> {
+export async function checkContactExistsEvolution(instanceName: string, phone: string | number, customConfig?: { host: string; apiKey: string }): Promise<{exists: boolean, validPhone?: string}> {
   try {
-    const config = await settingsService.getEvolutionConfig();
+    const config = customConfig || await settingsService.getEvolutionConfig();
 
     if (!config.host || !config.apiKey) {
       throw new Error('Configurações Evolution API não encontradas.');
