@@ -153,7 +153,21 @@ export class EvolutionApiService {
     }
 
     const url = `${config.host}/webhook/set/${instanceName}`;
-    console.log(`🔗 Setting Evolution webhook for ${instanceName}: ${webhookUrl}`);
+    const body = {
+      webhook: {
+        enabled: true,
+        url: webhookUrl,
+        byEvents: false,
+        base64: true,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        events: ['MESSAGES_UPSERT'],
+      },
+    };
+
+    console.log(`[WEBHOOK-SETUP] 🔗 Configurando webhook Evolution para ${instanceName}: ${webhookUrl}`);
+    console.log(`[WEBHOOK-SETUP] 📦 Body:`, JSON.stringify(body));
 
     const response = await fetch(url, {
       method: 'POST',
@@ -161,21 +175,17 @@ export class EvolutionApiService {
         'Content-Type': 'application/json',
         'apikey': config.apiKey,
       },
-      body: JSON.stringify({
-        url: webhookUrl,
-        webhook_by_events: false,
-        webhook_base64: true,
-        events: ['MESSAGES_UPSERT'],
-      }),
+      body: JSON.stringify(body),
     });
 
+    const responseText = await response.text();
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Error setting webhook for ${instanceName}: ${response.status} - ${errorText}`);
-      throw new Error(`Failed to set webhook: ${response.status} ${errorText}`);
+      console.error(`[WEBHOOK-SETUP] ❌ Falha para ${instanceName}: ${response.status} - ${responseText}`);
+      throw new Error(`Failed to set webhook: ${response.status} ${responseText}`);
     }
 
-    console.log(`✅ Webhook configured for ${instanceName}`);
+    console.log(`[WEBHOOK-SETUP] ✅ Webhook configurado para ${instanceName} - resposta: ${responseText}`);
   }
 
   async deleteInstance(instanceName: string): Promise<void> {
