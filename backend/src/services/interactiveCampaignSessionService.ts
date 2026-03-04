@@ -83,16 +83,36 @@ export const interactiveCampaignSessionService = {
 
   /**
    * Busca sessão ativa por telefone (para webhook)
+   * Lida com normalização de números brasileiros onde o WhatsApp
+   * pode remover o 9° dígito no JID (ex: 5531991570107 -> 553191570107)
    */
   async getActiveSessionByPhone(contactPhone: string) {
     // Normalizar telefone (remover caracteres especiais)
     const normalizedPhone = contactPhone.replace(/[^\d]/g, '');
 
+    // Gerar variações de número brasileiro (com/sem 9° dígito)
+    const phoneVariations = [normalizedPhone];
+
+    if (normalizedPhone.startsWith('55') && normalizedPhone.length >= 12) {
+      const ddd = normalizedPhone.substring(2, 4);
+      const rest = normalizedPhone.substring(4);
+
+      if (normalizedPhone.length === 12) {
+        // Número sem 9° dígito (12 dígitos: 55+DDD+8dig) - adicionar 9
+        phoneVariations.push(`55${ddd}9${rest}`);
+      } else if (normalizedPhone.length === 13 && rest.startsWith('9')) {
+        // Número com 9° dígito (13 dígitos: 55+DDD+9+8dig) - remover 9
+        phoneVariations.push(`55${ddd}${rest.substring(1)}`);
+      }
+    }
+
+    console.log(`🔍 Session lookup - phone variations: ${phoneVariations.join(', ')}`);
+
     return prisma.interactiveCampaignSession.findFirst({
       where: {
-        contactPhone: {
-          contains: normalizedPhone,
-        },
+        OR: phoneVariations.map(phone => ({
+          contactPhone: { contains: phone },
+        })),
         status: 'ACTIVE',
       },
       include: {
