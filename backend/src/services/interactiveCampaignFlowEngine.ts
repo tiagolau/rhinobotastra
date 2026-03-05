@@ -511,7 +511,7 @@ export const interactiveCampaignFlowEngine = {
             // Buscar credenciais globais do settings
             const evoConfig = await settingsService.getEvolutionConfig();
             if (evoConfig.host && evoConfig.apiKey) {
-              evolutionCreds = { url: evoConfig.host, apiKey: evoConfig.apiKey };
+              evolutionCreds = { host: evoConfig.host, apiKey: evoConfig.apiKey };
               console.log(`[FLOW-ENGINE] 🔑 Using global Evolution credentials for ${connection.instanceName}`);
             } else {
               console.log(`[FLOW-ENGINE] 🔑 Using default Evolution credentials for ${connection.instanceName}`);
