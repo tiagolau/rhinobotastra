@@ -33,6 +33,11 @@ export const TriggerNode = memo((props: NodeProps) => {
       parts.push('⚠️ Sem categorias');
     }
 
+    // Delay entre disparos
+    if (config.dispatchDelay && config.dispatchDelay > 0) {
+      parts.push(`⏱️ ${config.dispatchDelay}s delay`);
+    }
+
     return parts.join(' • ');
   };
 

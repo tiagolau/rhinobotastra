@@ -317,6 +317,38 @@ export function NodeConfigSidebar({ node, nodes, edges, connections, categories 
         )}
       </div>
 
+      {/* Delay entre Disparos */}
+      <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+        <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center">
+          <svg className="w-5 h-5 mr-2 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Delay entre Disparos
+        </h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Tempo de espera entre cada envio para evitar bloqueios. O delay real será aleatório entre 0 e o valor configurado.
+        </p>
+        <div className="flex items-center space-x-3">
+          <input
+            type="number"
+            min={0}
+            max={120}
+            value={config.dispatchDelay ?? 0}
+            onChange={(e) => setConfig({ ...config, dispatchDelay: Number(e.target.value) })}
+            className="w-24 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-primary"
+          />
+          <span className="text-sm text-gray-600">segundos</span>
+        </div>
+        {(config.dispatchDelay ?? 0) > 0 && (
+          <div className="mt-2 p-2 bg-white rounded border border-amber-200 text-xs text-gray-600">
+            Delay aleatório de <span className="font-medium text-gray-800">0</span> a <span className="font-medium text-gray-800">{config.dispatchDelay}s</span> entre cada contato
+          </div>
+        )}
+        {(config.dispatchDelay ?? 0) === 0 && (
+          <p className="text-xs text-orange-600 mt-2">⚠️ Sem delay, todos os contatos receberão quase simultaneamente</p>
+        )}
+      </div>
+
       {/* Conexões WhatsApp */}
       <div>
         <div className="flex items-center justify-between mb-2">
