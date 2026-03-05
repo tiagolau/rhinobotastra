@@ -60,9 +60,11 @@ export const interactiveCampaignDispatchService = {
         throw new Error('Nenhuma categoria configurada no Trigger');
       }
 
-      const dispatchDelay = triggerConfig.dispatchDelay || 0;
+      const dispatchDelay = Number(triggerConfig.dispatchDelay) || 0;
 
       console.log(`✅ Trigger config - Connections: ${connections.length}, Categories: ${categories.length}, Delay: ${dispatchDelay}s`);
+      console.log(`🔍 DEBUG triggerConfig keys: ${JSON.stringify(Object.keys(triggerConfig))}`);
+      console.log(`🔍 DEBUG dispatchDelay raw value: ${triggerConfig.dispatchDelay} (type: ${typeof triggerConfig.dispatchDelay})`);
 
       // Buscar primeiro nó conectado ao trigger seguindo as edges
       const firstEdge = graph.edges?.find((e: any) => e.source === triggerNode.id);
@@ -413,8 +415,11 @@ export const interactiveCampaignDispatchService = {
 
           // Delay entre envios (configurável pelo Trigger)
           if (dispatchDelay > 0) {
-            const randomDelay = Math.floor(Math.random() * dispatchDelay * 1000);
-            console.log(`⏱️ Applying dispatch delay of ${randomDelay}ms for contact ${contact.nome}`);
+            // Delay aleatório entre 50% e 100% do valor configurado
+            const minDelay = Math.floor(dispatchDelay * 1000 * 0.5);
+            const maxDelay = dispatchDelay * 1000;
+            const randomDelay = minDelay + Math.floor(Math.random() * (maxDelay - minDelay));
+            console.log(`⏱️ Applying dispatch delay of ${randomDelay}ms (${(randomDelay / 1000).toFixed(1)}s) for contact ${contact.nome} [range: ${minDelay}ms-${maxDelay}ms]`);
             await new Promise(resolve => setTimeout(resolve, randomDelay));
           } else {
             // Delay mínimo de 200ms para não sobrecarregar a API
