@@ -325,6 +325,7 @@ export const interactiveCampaignDispatchService = {
           console.log(`✅ Contact exists. Using validated phone: ${validatedPhone}`);
 
           // Personalizar mensagem
+          console.log(`🔍 DEBUG replace - contact.nome="${contact.nome}", contact.telefone="${contact.telefone}", validatedPhone="${validatedPhone}"`);
           let personalizedMessage = messageTemplate ? messageTemplate.replace(/\{\{nome\}\}/gi, contact.nome).replace(/\{\{telefone\}\}/gi, contact.telefone) : null;
 
           console.log(`📤 Sending ${mediaUrl ? mediaType : 'text'} to ${contact.nome} (${validatedPhone})`);

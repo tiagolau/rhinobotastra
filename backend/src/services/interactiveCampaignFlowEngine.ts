@@ -576,11 +576,18 @@ export const interactiveCampaignFlowEngine = {
   replaceVariables(template: string, variables: Record<string, any>): string {
     let result = template;
 
-    // Substituir variáveis no formato {variavel}
+    // Substituir variáveis no formato {{variavel}} (dupla chave) e {variavel} (chave simples)
     Object.keys(variables).forEach(key => {
-      const regex = new RegExp(`\\{${key}\\}`, 'gi');
-      result = result.replace(regex, String(variables[key] || ''));
+      const value = String(variables[key] || '');
+      // Primeiro substituir {{variavel}} (dupla chave)
+      const doubleRegex = new RegExp(`\\{\\{${key}\\}\\}`, 'gi');
+      result = result.replace(doubleRegex, value);
+      // Depois substituir {variavel} (chave simples)
+      const singleRegex = new RegExp(`\\{${key}\\}`, 'gi');
+      result = result.replace(singleRegex, value);
     });
+
+    console.log(`[FLOW-ENGINE] 🔍 replaceVariables - variables: ${JSON.stringify(variables)}`);
 
     return result;
   },
