@@ -38,14 +38,17 @@ const evolutionRequestWithCredentials = async (baseUrl: string, apiKey: string, 
 };
 
 // Busca credenciais Evolution para uma sessão a partir dos dados já carregados (sem query extra)
+// Aceita config como string JSON (raw Prisma) ou objeto já parseado (via WhatsAppSessionService)
 const getEvolutionCredentialsFromSession = (session: any): { url: string; apiKey: string } | null => {
   try {
-    const configStr = typeof session.config === 'string' ? session.config : null;
-    if (configStr) {
-      const config = JSON.parse(configStr);
-      if (config.evolutionUrl && config.evolutionApiKey) {
-        return { url: config.evolutionUrl, apiKey: config.evolutionApiKey };
-      }
+    let config: any = null;
+    if (typeof session.config === 'string') {
+      config = JSON.parse(session.config);
+    } else if (typeof session.config === 'object' && session.config !== null) {
+      config = session.config;
+    }
+    if (config && config.evolutionUrl && config.evolutionApiKey) {
+      return { url: config.evolutionUrl, apiKey: config.evolutionApiKey };
     }
   } catch (e) {}
   return null;
@@ -679,13 +682,36 @@ router.post('/sessions/:sessionName/start', authMiddleware, async (req: Authenti
 
     let result;
     if (sessionProvider === 'EVOLUTION') {
-      // Usar Evolution API - conectar e obter QR Code
+      // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
+      const customCreds = getEvolutionCredentialsFromSession(sessionData);
+
       try {
-        console.log(`🔄 Conectando instância Evolution ${sessionName}...`);
-        result = await evolutionApiService.getQRCode(sessionName);
+        let qrCodeData: string;
+
+        if (customCreds) {
+          // Sessão importada: usar credenciais customizadas
+          console.log(`🔄 Conectando instância Evolution importada ${sessionName} (${customCreds.url})...`);
+          const connectRes = await evolutionRequestWithCredentials(
+            customCreds.url,
+            customCreds.apiKey,
+            `/instance/connect/${sessionName}`
+          );
+          if (!connectRes.ok) {
+            const errText = await connectRes.text();
+            throw new Error(`Evolution API Error: ${connectRes.status} - ${errText}`);
+          }
+          const data = await connectRes.json();
+          qrCodeData = data.base64
+            ? (data.base64.startsWith('data:image/') ? data.base64 : `data:image/png;base64,${data.base64}`)
+            : data.code || '';
+        } else {
+          // Sessão global: usar evolutionApiService normalmente
+          console.log(`🔄 Conectando instância Evolution ${sessionName}...`);
+          qrCodeData = await evolutionApiService.getQRCode(sessionName);
+        }
 
         // Se conseguiu obter QR, salvar no banco
-        if (result) {
+        if (qrCodeData) {
           const qrExpiresAt = new Date(Date.now() + 300000); // 5 minutos
 
           await WhatsAppSessionService.createOrUpdateSession({
@@ -693,7 +719,7 @@ router.post('/sessions/:sessionName/start', authMiddleware, async (req: Authenti
             status: 'SCAN_QR_CODE',
             provider: 'EVOLUTION',
             tenantId: sessionData.tenantId,
-            qr: result,
+            qr: qrCodeData,
             qrExpiresAt: qrExpiresAt
           });
 
@@ -701,7 +727,7 @@ router.post('/sessions/:sessionName/start', authMiddleware, async (req: Authenti
         }
 
         // Retornar o QR code para o frontend
-        result = { qr: result, status: 'SCAN_QR_CODE' };
+        result = { qr: qrCodeData, status: 'SCAN_QR_CODE' };
       } catch (error: any) {
         console.error(`❌ Erro ao conectar instância Evolution ${sessionName}:`, error.message);
         throw new Error(`Erro ao iniciar sessão WhatsApp: ${error.message}`);
@@ -852,11 +878,34 @@ router.post('/sessions/:sessionName/restart', async (req, res) => {
 
     let result;
     if (sessionProvider === 'EVOLUTION') {
-      result = await evolutionApiService.restartInstance(sessionName);
+      // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
+      const savedSession = await prisma.whatsAppSession.findFirst({ where: { name: sessionName }, select: { config: true, tenantId: true } });
+      const customCreds = getEvolutionCredentialsFromSession(savedSession || {});
+
+      if (customCreds) {
+        // Sessão importada: usar credenciais customizadas
+        console.log(`🔄 Reiniciando instância Evolution importada ${sessionName} (${customCreds.url})...`);
+        const restartRes = await evolutionRequestWithCredentials(
+          customCreds.url,
+          customCreds.apiKey,
+          `/instance/restart/${sessionName}`,
+          { method: 'PUT' }
+        );
+        if (!restartRes.ok) {
+          const errText = await restartRes.text();
+          throw new Error(`Evolution API Error: ${restartRes.status} - ${errText}`);
+        }
+        result = await restartRes.json().catch(() => ({ message: 'Instance restarted' }));
+      } else {
+        // Sessão global: usar evolutionApiService normalmente
+        result = await evolutionApiService.restartInstance(sessionName);
+      }
+
       await WhatsAppSessionService.createOrUpdateSession({
         name: sessionName,
         status: 'SCAN_QR_CODE',
-        provider: 'EVOLUTION'
+        provider: 'EVOLUTION',
+        tenantId: savedSession?.tenantId
       });
     } else {
       result = await WahaSyncService.restartSession(sessionName);
@@ -892,13 +941,35 @@ router.delete('/sessions/:sessionName', authMiddleware, async (req: Authenticate
 
     // Deletar da API correspondente
     if (sessionProvider === 'EVOLUTION') {
+      // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
+      const savedSessionData = await prisma.whatsAppSession.findFirst({ where: { name: sessionName }, select: { config: true } });
+      const customCreds = getEvolutionCredentialsFromSession(savedSessionData || {});
+
       try {
-        await evolutionApiService.deleteInstance(sessionName);
-        console.log(`✅ Sessão ${sessionName} deletada da Evolution API`);
+        if (customCreds) {
+          // Sessão importada: usar credenciais customizadas para deletar
+          console.log(`🗑️ Deletando instância Evolution importada ${sessionName} (${customCreds.url})...`);
+          const deleteRes = await evolutionRequestWithCredentials(
+            customCreds.url,
+            customCreds.apiKey,
+            `/instance/delete/${sessionName}`,
+            { method: 'DELETE' }
+          );
+          if (!deleteRes.ok) {
+            const errText = await deleteRes.text();
+            console.warn(`⚠️ Erro ao deletar ${sessionName} da Evolution externa: ${deleteRes.status} - ${errText}`);
+          } else {
+            console.log(`✅ Sessão ${sessionName} deletada da Evolution API externa`);
+          }
+        } else {
+          // Sessão global: usar evolutionApiService normalmente
+          await evolutionApiService.deleteInstance(sessionName);
+          console.log(`✅ Sessão ${sessionName} deletada da Evolution API`);
+        }
       } catch (error) {
         console.warn(`⚠️ Erro ao deletar ${sessionName} da Evolution API:`, error);
       }
-      // Para Evolution, deletar manualmente do banco também
+      // Deletar do banco também
       try {
         await WhatsAppSessionService.deleteSession(sessionName, tenantId);
         console.log(`✅ Sessão ${sessionName} removida do banco de dados`);
@@ -1017,7 +1088,31 @@ router.get('/sessions/:sessionName/auth/qr', authMiddleware, async (req: Authent
     // Se for Evolution API, usar o serviço específico
     if (sessionProvider === 'EVOLUTION') {
       try {
-        const qrCodeData = await evolutionApiService.getQRCode(sessionName);
+        // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
+        const customCreds = getEvolutionCredentialsFromSession(sessionData);
+        let qrCodeData: string;
+
+        if (customCreds) {
+          // Sessão importada: usar credenciais customizadas
+          console.log(`🔍 Obtendo QR code da Evolution importada ${sessionName} (${customCreds.url})...`);
+          const connectRes = await evolutionRequestWithCredentials(
+            customCreds.url,
+            customCreds.apiKey,
+            `/instance/connect/${sessionName}`
+          );
+          if (!connectRes.ok) {
+            const errText = await connectRes.text();
+            throw new Error(`Evolution API Error: ${connectRes.status} - ${errText}`);
+          }
+          const data = await connectRes.json();
+          qrCodeData = data.base64
+            ? (data.base64.startsWith('data:image/') ? data.base64 : `data:image/png;base64,${data.base64}`)
+            : data.code || '';
+        } else {
+          // Sessão global: usar evolutionApiService normalmente
+          qrCodeData = await evolutionApiService.getQRCode(sessionName);
+        }
+
         const expiresAt = new Date(Date.now() + 300000); // 5 minutos
 
         // Salvar o QR code no banco de dados

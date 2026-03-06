@@ -6,12 +6,14 @@ import { settingsService } from './settingsService';
  */
 export function getEvolutionCredentialsFromSession(session: any): { host: string; apiKey: string } | null {
   try {
-    const configStr = typeof session.config === 'string' ? session.config : null;
-    if (configStr) {
-      const config = JSON.parse(configStr);
-      if (config.evolutionUrl && config.evolutionApiKey) {
-        return { host: config.evolutionUrl, apiKey: config.evolutionApiKey };
-      }
+    let config: any = null;
+    if (typeof session.config === 'string') {
+      config = JSON.parse(session.config);
+    } else if (typeof session.config === 'object' && session.config !== null) {
+      config = session.config;
+    }
+    if (config && config.evolutionUrl && config.evolutionApiKey) {
+      return { host: config.evolutionUrl, apiKey: config.evolutionApiKey };
     }
   } catch (e) {}
   return null;
