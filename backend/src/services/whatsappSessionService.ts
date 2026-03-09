@@ -86,13 +86,12 @@ export class WhatsAppSessionService {
   }
 
   static async createOrUpdateSession(data: WhatsAppSessionData) {
-    // Dados base para criação
+    // Dados base (sem config — config é tratado separadamente para não apagar credenciais de sessões importadas)
     const baseData = {
       name: data.name,
       displayName: data.displayName || data.name,
       status: data.status,
       provider: data.provider,
-      config: data.config ? JSON.stringify(data.config) : null,
       meId: data.me?.id || null,
       mePushName: data.me?.pushName || null,
       meLid: data.me?.lid || null,
@@ -104,11 +103,15 @@ export class WhatsAppSessionService {
       quepasaToken: data.quepasaToken || null,
     };
 
-    // Dados para update - só incluir interactiveCampaignEnabled e webhookSecret se foram explicitamente passados
+    // Dados para update - só incluir config se foi explicitamente passado (preserva credenciais de sessões importadas)
     const updateData: any = {
       ...baseData,
       atualizadoEm: new Date()
     };
+
+    if (data.config !== undefined) {
+      updateData.config = data.config ? JSON.stringify(data.config) : null;
+    }
 
     // Só atualizar esses campos se foram explicitamente passados (não undefined)
     if (data.interactiveCampaignEnabled !== undefined) {
@@ -121,6 +124,7 @@ export class WhatsAppSessionService {
     // Dados para criação - incluir valores default
     const createData = {
       ...baseData,
+      config: data.config ? JSON.stringify(data.config) : null,
       interactiveCampaignEnabled: data.interactiveCampaignEnabled || false,
       webhookSecret: data.webhookSecret || null,
       criadoEm: new Date(),

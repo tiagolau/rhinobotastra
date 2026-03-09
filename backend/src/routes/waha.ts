@@ -305,7 +305,9 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
           // Verificar se sessão tem credenciais customizadas (importada de Evolution externa)
           const customCreds = getEvolutionCredentialsFromSession(session);
 
-            let mappedStatus = 'STOPPED';
+            // Preservar status anterior como fallback em caso de erro temporário
+            const previousStatus = session.status || 'STOPPED';
+            let mappedStatus: string | null = null;
             let instanceInfo: any = null;
 
             if (customCreds) {
@@ -326,10 +328,12 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
                     'closed': 'STOPPED',
                   };
                   mappedStatus = stateMap[rawState?.toLowerCase()] || 'STOPPED';
+                } else {
+                  console.warn(`⚠️ Evolution customizada retornou HTTP ${stateRes.status} para ${session.name} (${customCreds.url}) — mantendo status anterior: ${previousStatus}`);
                 }
               } catch (e) {
-                console.warn(`⚠️ Erro ao verificar status Evolution customizado para ${session.name}:`, e);
-                mappedStatus = 'STOPPED';
+                console.warn(`⚠️ Erro de rede ao verificar status Evolution customizado para ${session.name} (${customCreds.url}) — mantendo status anterior: ${previousStatus}:`, e);
+                // Não derrubar sessão por erro temporário de rede/timeout
               }
 
               try {
@@ -347,7 +351,11 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
               }
             } else {
               // Sessão global: usar evolutionApiService normalmente
-              mappedStatus = await evolutionApiService.getInstanceStatus(session.name);
+              try {
+                mappedStatus = await evolutionApiService.getInstanceStatus(session.name);
+              } catch (e) {
+                console.warn(`⚠️ Erro ao verificar status Evolution global para ${session.name} — mantendo status anterior: ${previousStatus}`);
+              }
               try {
                 instanceInfo = await evolutionApiService.getInstanceInfo(session.name);
               } catch (e) {
@@ -355,12 +363,14 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
               }
             }
 
-            console.log(`🔍 Status Evolution para ${session.name}:`, mappedStatus);
+            // Se não conseguiu obter status (erro de rede/timeout), manter o anterior
+            const effectiveStatus = mappedStatus || previousStatus;
+            console.log(`🔍 Status Evolution para ${session.name}: ${effectiveStatus}${!mappedStatus ? ' (mantido — erro ao consultar)' : ''}`);
 
             // Montar dados do 'me' quando conectado
             let meData = undefined;
             const evolutionData = instanceInfo as any;
-            if (mappedStatus === 'WORKING' && evolutionData && (evolutionData.ownerJid || evolutionData.owner)) {
+            if (effectiveStatus === 'WORKING' && evolutionData && (evolutionData.ownerJid || evolutionData.owner)) {
               const jid = evolutionData.ownerJid || evolutionData.owner;
               meData = {
                 id: jid,
@@ -370,10 +380,10 @@ router.post('/sessions/sync', authMiddleware, async (req: AuthenticatedRequest, 
             }
 
             // Atualizar sessão no banco (já existe, só atualiza status — usa método rápido)
-            if (mappedStatus && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(mappedStatus)) {
+            if (effectiveStatus && ['WORKING', 'SCAN_QR_CODE', 'STOPPED', 'FAILED'].includes(effectiveStatus)) {
               await WhatsAppSessionService.updateStatusFast(
                 session.name,
-                mappedStatus,
+                effectiveStatus,
                 meData
               );
             }
@@ -905,7 +915,7 @@ router.post('/sessions/:sessionName/restart', async (req, res) => {
         name: sessionName,
         status: 'SCAN_QR_CODE',
         provider: 'EVOLUTION',
-        tenantId: savedSession?.tenantId
+        tenantId: savedSession?.tenantId || undefined
       });
     } else {
       result = await WahaSyncService.restartSession(sessionName);
